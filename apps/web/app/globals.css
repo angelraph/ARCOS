@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+:root {
+  --background: #05070d;
+  --surface: #0d121f;
+  --surface-raised: #131a2b;
+  --border: #22304a;
+  --foreground: #e7ecf6;
+  --muted: #8b97b0;
+  --accent: #35c7f0;
+  --accent-2: #3b6dfa;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --violet: #7c3aed;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-border: var(--border);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+
+.mono {
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+
+/* Shared page-background gradient — three brand colors (teal, blue, violet) blended
+   diagonally, with a per-page angle/position so each page reads as visually distinct
+   while staying one coherent family. Bold enough to actually see, not a faint tint. */
+.page-gradient {
+  position: relative;
+  background: var(--background);
+  isolation: isolate;
+}
+
+.page-gradient::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      var(--gradient-angle, 135deg),
+      var(--background) 0%,
+      color-mix(in srgb, var(--accent-2) 30%, var(--background)) 42%,
+      color-mix(in srgb, var(--violet, #7c3aed) 26%, var(--background)) 70%,
+      color-mix(in srgb, var(--accent) 30%, var(--background)) 100%
+    );
+}

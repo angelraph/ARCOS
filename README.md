@@ -1,0 +1,88 @@
+<p align="center">
+  <img src="docs/brand/arcos-logo.jpeg" alt="ARCOS" width="480" />
+</p>
+
+# ARCOS: Autonomous Treasury Commerce System
+
+Submission for the **Stablecoins Commerce Stack Challenge** (Ignyte x Circle x Arc), Track 4: *Best Agentic Economy Experience on Arc*.
+
+ARCOS is not an AI wallet or a payment app. It's a small set of autonomous agents that actually run part of a business on Arc. A **Treasury Agent** allocates incoming USDC into policy-defined buckets. A **Procurement Agent** negotiates and settles with a **Supplier Agent**. Delivery is confirmed before an escrow releases funds. Every decision (every allocation, every negotiation, every release) is written to an onchain **Decision Ledger** with a verifiable rationale hash, and any spend above a policy threshold pauses for a governance approval before it can execute, enforced by the contract itself, not a UI check.
+
+Real Arc Testnet transactions throughout. Nothing in this build is mocked.
+
+## Live site
+
+Four pages, each with a job:
+- **`/`**: the landing page. What ARCOS is, the problem it solves, and why it runs on Arc.
+- **`/engine`**: how it actually works, contract by contract and agent by agent, with the architecture diagram.
+- **`/run`**: trigger a real run yourself. Pick an amount, optionally pick a recipient address, and watch the agents execute live against Arc Testnet.
+- **`/dashboard`**: live on-chain state. Treasury buckets, escrow payments, pending governance approvals, and the full Decision Ledger with client-side hash verification.
+
+## Why this exists
+
+For educational and testnet demo purposes only, per the challenge rules. See [`docs/circle-feedback.md`](docs/circle-feedback.md) for the required Circle Product Feedback write-up, kept up to date throughout the build rather than written after the fact.
+
+## Architecture
+
+```
+Incoming USDC payment
+  -> Treasury Agent        (allocates into policy buckets)
+  -> Procurement Agent     (proposes a spend, negotiates with Supplier Agent)
+  -> Governance gate       (any spend above threshold pauses for approval, enforced on-chain)
+  -> Escrow                (opens for the recipient)
+  -> delivery confirmation (AI-vision seam, reused from arc-escrow)
+  -> Escrow release        (or refund by Governance if delivery fails)
+  -> Decision Ledger       (every step above logged on-chain: agent, action, rationale hash, tx ref)
+```
+
+See [`docs/architecture.png`](docs/architecture.png) for the full diagram (also shown on the `/engine` page).
+
+## Repo structure
+
+```
+apps/
+  web/          Next.js site: landing, engine explainer, live execution page, dashboard
+  agents/       Node/TS agent engine: Treasury, Procurement, Supplier, Governance
+contracts/      Foundry project: DecisionLedger.sol, TreasuryPolicy.sol, Escrow.sol
+packages/
+  shared/       ABIs, deployed addresses, Circle Wallets SDK wrapper, shared TS types
+scripts/        One-time setup scripts (entity secret registration, wallet creation)
+docs/
+  brand/        ARCOS logo and brand assets
+  architecture.png / architecture.mmd
+  circle-feedback.md
+```
+
+Built on top of two official Circle sample repos rather than from scratch:
+- [`circlefin/arc-nanopayments`](https://github.com/circlefin/arc-nanopayments): LangChain agent and x402-protected endpoints via `@circle-fin/x402-batching`
+- [`circlefin/arc-escrow`](https://github.com/circlefin/arc-escrow): escrow and AI-validated deliverable release via `@circle-fin/developer-controlled-wallets`
+
+`apps/web` reuses the agent engine directly (`@arcos/agents/orchestrator`) rather than shelling out to a CLI, so the live `/run` page executes the exact same code path as the command-line tool.
+
+## Deployed contracts (Arc Testnet)
+
+| Contract | Address |
+|---|---|
+| DecisionLedger | `0xe64f53388609d3a08fedfdca9ce0664ad94bcc18` |
+| TreasuryPolicy | `0x7c209c4c6b0bd43104e4ef74627a919ed8e21aa1` |
+| Escrow | `0x01ddc84d00d38852d73977f1241e2210c1c1bc38` |
+
+## Setup
+
+1. **Circle Developer Console**: sign up at [console.circle.com](https://console.circle.com), create an API key, then run `npm run register-entity-secret` to generate and register an entity secret (irreversible, do this once and keep the recovery file it produces somewhere safe).
+2. **Arc Testnet**: RPC `https://rpc.testnet.arc.network` (chain ID `5042002`).
+3. `npm install` at the repo root (npm workspaces).
+4. `npm run create-wallets` to create the five agent wallets (Treasury, Procurement, Supplier, Governance, Customer) on Arc Testnet. Fund them from the Developer Console's faucet (by wallet ID, not address) with both native gas and USDC.
+5. Copy `.env.example` to `.env` and fill in values as each step above produces them.
+6. `cd contracts && forge build && forge test` to confirm the contract suite passes, then `forge script script/Deploy.s.sol:Deploy --rpc-url arc_testnet --broadcast` to deploy.
+7. `npm run dev:web` to run the site locally, or `npm run dev:agents` / `npm run start -w apps/agents` to run the agent engine from the command line.
+
+## Verification
+
+- All 18 Foundry tests pass across the three contracts.
+- The full flow (payment, allocation, procurement spend, governance approval, supplier quote, escrow open, delivery confirmation, release) has been run multiple times end to end against real Circle Developer-Controlled Wallets on Arc Testnet, with every step's ground truth checked directly against contract state, not just trusted from logs.
+- The dashboard reads on-chain state directly (no cached or mocked data) and recomputes each Decision Ledger entry's rationale hash client-side to verify it against the on-chain value.
+
+## Status
+
+Core flow complete and verified end to end. See `docs/circle-feedback.md` for what worked well and what could be improved in the Circle/Arc developer experience.

@@ -1,0 +1,26 @@
+# Circle Product Feedback
+
+_Living document — updated throughout the build, not written after the fact._
+
+## Why we chose these products
+
+- **`@circle-fin/developer-controlled-wallets`** — lets ARCOS's agents sign and submit real contract transactions (TreasuryPolicy, Escrow, DecisionLedger) without any agent process ever holding a raw private key. That property is central to ARCOS's pitch: autonomous agents moving real USDC needs to be safely custodied, not just "fast."
+- **`@circle-fin/x402-batching` (Circle Nanopayments)** — the Procurement↔Supplier negotiation settles as gasless, sub-cent, EIP-3009-signed payments batched onchain via Gateway. This is the natural settlement rail for agent-to-agent commerce at high frequency, which is exactly ARCOS's Track 4 scenario.
+- **`@circle-fin/app-kit`** — used for the CCTP/Bridge stretch goal (cross-chain treasury rebalance) instead of wiring CCTP v2 and Gateway separately; one SDK for Bridge/Swap/Send/Unified Balance reduces integration surface under hackathon time pressure.
+
+## What worked well
+
+- `initiateDeveloperControlledWalletsClient` + `createWalletSet`/`createWallets` worked first try against `ARC-TESTNET` — created a 5-wallet set (Treasury/Procurement/Supplier/Governance/Customer) in one call, addresses came back immediately, no propagation delay.
+- Cloning the two official sample repos (`arc-nanopayments`, `arc-escrow`) and reading their actual source (not just docs) was the single highest-leverage research step — it surfaced the real `createContractExecutionTransaction` call shape and the real Arc Testnet USDC address (`0x3600...0000`) faster than the docs alone did.
+
+## What could be improved
+
+- **`Blockchain` type in `@circle-fin/developer-controlled-wallets` (v4.7.0) doesn't include `"ARC-TESTNET"`** in its exported union, even though the runtime API accepts it and returns real Arc addresses. Had to cast past the stale type (`scripts/create-wallets.ts`) rather than get a clean compile. Minor, but it's exactly the kind of thing that makes a first-time integrator second-guess whether they're calling the SDK correctly.
+- Two separate "USDC"s on Arc are easy to conflate: the native gas token (18 decimals, used automatically for tx fees, funded by the public faucet) vs. the ERC-20 commerce USDC at a fixed address (6 decimals, what `TreasuryPolicy`/`Escrow` actually move). Nothing in the Arc docs landing page flags this distinction up front — we only found it by reading `arc-nanopayments/agent.mts`'s use of `parseEther` (native) alongside `erc20Abi.transfer` (commerce) side by side.
+- The public web faucet (`faucet.circle.com`) and the Developer Console's wallet-ID-based faucet are two different tools with overlapping purpose and no cross-linking between their docs pages — cost us a round trip pasting a wallet ID into a field that expected an address instead.
+- `npm.com` and some `developers.circle.com` pages return HTTP 403 to non-browser fetches, which made verifying exact SDK method signatures (e.g. entity-secret rotation) harder than it needed to be during a time-boxed build.
+- **Arc Testnet's block explorer (`testnet.arcscan.app`, Blockscout) has real indexing gaps.** We hit multiple transactions that are confirmed on-chain (verified directly via `eth_getTransactionByHash` against the RPC, correct block number, correct sender/recipient) but the explorer permanently returns "we are unable to locate this transaction hash" for them, not just a transient "still indexing, wait 30 seconds" state. This matters a lot for a demo/judging context: a judge clicking a transaction link and hitting a dead end reads as "this project is broken," when the actual transaction is entirely real. We worked around it by treating our own dashboard (which reads state directly from the RPC, not through the explorer) as the source of truth, and added an explicit note in the UI so this doesn't look like our bug. It would be worth Circle/Arc's team looking at why the indexer misses transactions rather than just lagging behind them.
+
+## Recommendations
+
+_(fill in at the end of the build)_

@@ -1,0 +1,12 @@
+{
+  "name": "@arcos/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "types": "index.ts",
+  "dependencies": {
+    "viem": "^2.21.0",
+    "@circle-fin/developer-controlled-wallets": "^4.6.0"
+  }
+}

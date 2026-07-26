@@ -1,0 +1,173 @@
+[
+  {
+    "agentId": "TREASURY_AGENT",
+    "actionType": "TREASURY_ALLOCATION",
+    "rationale": "Allocated incoming payment across policy buckets per configured basis points.",
+    "rationaleHash": "0xfdbf14ac47b875d472b36daeb1d666ddd63d32efd9edd9635e09d3be07cb8491",
+    "txRef": "0x494d67a089a88ad3a238f1863313791defbc188f19dc7e3411bce3833e7060cb",
+    "ledgerTxHash": "0x549792865b305c7024f38fcf18b56b948c512e7197fcd6ac1419851675509224",
+    "timestamp": "2026-07-26T07:47:31.277Z"
+  },
+  {
+    "agentId": "PROCUREMENT_AGENT",
+    "actionType": "PROCUREMENT_ORDER",
+    "rationale": "Proposed a 2000000-atomic-USDC procurement spend: Restocking low inventory item",
+    "rationaleHash": "0xc445f5723b48652e6d0b75855d49fad752202c19b5d5471d82597f5919d79715",
+    "txRef": "0x2613a67927b25e67dc355322ef30825c1e14c09bf9ab7bf3f9eb7ccf9afd3167",
+    "ledgerTxHash": "0xc85bba413d4bab35ad6f4d5b1fd6a195c56b295f08b25cb395685b03f04aa6e8",
+    "timestamp": "2026-07-26T07:47:37.997Z"
+  },
+  {
+    "agentId": "PROCUREMENT_AGENT",
+    "actionType": "ESCROW_OPEN",
+    "rationale": "Opened escrow for a 2000000-atomic-USDC supplier order.",
+    "rationaleHash": "0xc65988f176d7217e70dfcb86d28a20ef05086e5b7f6ea84c38c22c5f45d3ad97",
+    "txRef": "0xb1f5a7a6b7a7e690bd6ddf93077404b8041691ecff34c7591ea077ba5ef1e911",
+    "ledgerTxHash": "0xf795e054a37c67eb1ebeca8b6acd4e7a31f4730e3a31f0cfd6f5f64f1ffb61c9",
+    "timestamp": "2026-07-26T07:47:49.973Z"
+  },
+  {
+    "agentId": "SUPPLIER_AGENT",
+    "actionType": "SUPPLIER_QUOTE",
+    "rationale": "Quoted 2000000 atomic USDC for Fresh produce restock, in stock and ready to ship.",
+    "rationaleHash": "0x637c13137d08a3f6cb0c26d39c73aabecf8438b90a58b5ec80f26590db145b00",
+    "txRef": "0xb1f5a7a6b7a7e690bd6ddf93077404b8041691ecff34c7591ea077ba5ef1e911",
+    "ledgerTxHash": "0xb9e5b7c47519e614e246f80914cc67500a95866382c183ec3524e3666a4d13b5",
+    "timestamp": "2026-07-26T07:47:52.971Z"
+  },
+  {
+    "agentId": "SUPPLIER_AGENT",
+    "actionType": "ESCROW_RELEASE",
+    "rationale": "Delivery confirmed: Mock validation (no vision model wired up yet): accepted \"Fresh produce restock delivered\" on trust.. Escrow payment #0 released.",
+    "rationaleHash": "0xe259bab8fefaf9eae48776b4611083c739ed84ed5ea2a7c1f16d9864e5c9a49b",
+    "txRef": "0x65fe32a507facd41f52c88b737304e96a9d4e4aae10d48ec89fb08d3dd43e275",
+    "ledgerTxHash": "0xf747048c1bbe0b6b67f92a61439eb8823427ef683d1ee2db932c6583a35b993c",
+    "timestamp": "2026-07-26T07:47:59.042Z"
+  },
+  {
+    "agentId": "TREASURY_AGENT",
+    "actionType": "TREASURY_ALLOCATION",
+    "rationale": "Allocated incoming payment across policy buckets per configured basis points.",
+    "rationaleHash": "0xfdbf14ac47b875d472b36daeb1d666ddd63d32efd9edd9635e09d3be07cb8491",
+    "txRef": "0x8645cad8743e0d573cd214626c26610e0af09eeb4c6c5a26fd204a9b3559a09e",
+    "ledgerTxHash": "0x6d803962240e0b1279e262d6c10144573995284df166f0e443df8ccb7e75b017",
+    "timestamp": "2026-07-26T07:52:44.055Z"
+  },
+  {
+    "agentId": "PROCUREMENT_AGENT",
+    "actionType": "PROCUREMENT_ORDER",
+    "rationale": "Proposed a 2000000-atomic-USDC procurement spend: Restocking low inventory item",
+    "rationaleHash": "0xc445f5723b48652e6d0b75855d49fad752202c19b5d5471d82597f5919d79715",
+    "txRef": "0x1f60cff25c6b4694df5d4978f547f34467cc7329ce5c6164c08465d647dbd19d",
+    "ledgerTxHash": "0x5142089849fc7af3d40294d9a467aa67657f108d9a6109a0415cbbc8a22eaa4b",
+    "timestamp": "2026-07-26T07:52:54.408Z"
+  },
+  {
+    "agentId": "TREASURY_AGENT",
+    "actionType": "TREASURY_ALLOCATION",
+    "rationale": "Allocated incoming payment across policy buckets per configured basis points.",
+    "rationaleHash": "0xfdbf14ac47b875d472b36daeb1d666ddd63d32efd9edd9635e09d3be07cb8491",
+    "txRef": "0x3ed846ff992c74a083a8ab84751ff328c5ca5fcf04898f1706f510d582efbcd2",
+    "ledgerTxHash": "0x0790575bed4429e13308fe1de15d440b219a99406357f2d1b871fc5221f20f0f",
+    "timestamp": "2026-07-26T07:54:31.592Z"
+  },
+  {
+    "agentId": "PROCUREMENT_AGENT",
+    "actionType": "PROCUREMENT_ORDER",
+    "rationale": "Proposed a 2000000-atomic-USDC procurement spend: Restocking low inventory item",
+    "rationaleHash": "0xc445f5723b48652e6d0b75855d49fad752202c19b5d5471d82597f5919d79715",
+    "txRef": "0xdb148c9ab6a77270a1ac31d6c5c4bd3cffb4ba0ce35628e73b8586caa97ab031",
+    "ledgerTxHash": "0x49cc06915ab3b7feffc73be7fb0125eac36bc05897abdee15eb9eb44d7460127",
+    "timestamp": "2026-07-26T07:54:38.257Z"
+  },
+  {
+    "agentId": "TREASURY_AGENT",
+    "actionType": "GOVERNANCE_OVERRIDE",
+    "rationale": "Governance approved pending spend #2 (2000000 atomic USDC, above auto-execute threshold).",
+    "rationaleHash": "0x195d3fd599d8c3028b9b25ff49cf0443124c461352645bd8d6a96cff8a49580f",
+    "txRef": "0x8182f86d2ae518a96b088a52874a99945e3efcc33cf22540031bb4a6573cfb96",
+    "ledgerTxHash": "0xb9c29f4544ea0f73362b0c9171e1f0c50fc52e8f059744991cae9a0099998e44",
+    "timestamp": "2026-07-26T07:54:44.767Z"
+  },
+  {
+    "agentId": "PROCUREMENT_AGENT",
+    "actionType": "ESCROW_OPEN",
+    "rationale": "Opened escrow for a 2000000-atomic-USDC supplier order.",
+    "rationaleHash": "0xc65988f176d7217e70dfcb86d28a20ef05086e5b7f6ea84c38c22c5f45d3ad97",
+    "txRef": "0xb33e1f79eaea9b0d1c57fd5349abd7e056f71884b19bf048f64056376fc392c4",
+    "ledgerTxHash": "0x10630f5d8e79308a27acc44c4f86baa65026d86d0ac679f1d5fce3850e52f1db",
+    "timestamp": "2026-07-26T07:54:54.774Z"
+  },
+  {
+    "agentId": "SUPPLIER_AGENT",
+    "actionType": "SUPPLIER_QUOTE",
+    "rationale": "Quoted 2000000 atomic USDC for Fresh produce restock, in stock and ready to ship.",
+    "rationaleHash": "0x637c13137d08a3f6cb0c26d39c73aabecf8438b90a58b5ec80f26590db145b00",
+    "txRef": "0xb33e1f79eaea9b0d1c57fd5349abd7e056f71884b19bf048f64056376fc392c4",
+    "ledgerTxHash": "0x639b0d00ebc6ef92d1ba095e3b4f6f7d1094501ef45a6586749155d241511646",
+    "timestamp": "2026-07-26T07:54:57.673Z"
+  },
+  {
+    "agentId": "SUPPLIER_AGENT",
+    "actionType": "ESCROW_RELEASE",
+    "rationale": "Delivery confirmed: Mock validation (no vision model wired up yet): accepted \"Fresh produce restock delivered\" on trust.. Escrow payment #1 released.",
+    "rationaleHash": "0x0c5ed764ec964a1a6e4f4a3b97cdbb262bea06b4e873ffac440a46f391af6163",
+    "txRef": "0x8be250c898985a5c749907499461a3ea4cfa93c52ec62bf2b217e437ae7877b7",
+    "ledgerTxHash": "0x166b6a5356f827ee052fc7e88b729c3dda5eda93eeb6d96646564fdc4b1393f0",
+    "timestamp": "2026-07-26T07:55:05.982Z"
+  },
+  {
+    "agentId": "TREASURY_AGENT",
+    "actionType": "TREASURY_ALLOCATION",
+    "rationale": "Allocated a $3 USDC payment across policy buckets per configured basis points.",
+    "rationaleHash": "0xd0806a75b6681db9d7181106dae8a3e5052fa98d5e809aa06a96cea120614c31",
+    "txRef": "0xc13bd847e4df1944ca164407eed65717a43c66920dec0b1a3a9142ecebad916b",
+    "ledgerTxHash": "0x43c7dc8cab3120bf88836f3bfb3da75a96a0d4f77831471f03206f5c61b60e01",
+    "timestamp": "2026-07-26T08:46:25.159Z"
+  },
+  {
+    "agentId": "PROCUREMENT_AGENT",
+    "actionType": "PROCUREMENT_ORDER",
+    "rationale": "Proposed a $1.2 USDC procurement spend: Restocking low inventory item",
+    "rationaleHash": "0x0736c66d3eb47b8bd88fd44052176b6d2c11c3ffefdc078b656310dafb516888",
+    "txRef": "0xdf624926280a9f361c24aaf115031936cef1a14dc990f8ff8748a1ac3bebf736",
+    "ledgerTxHash": "0xc6443008f538617563c5b32798a1f1006a3f03bbdd011c13fb5a17aee2baf372",
+    "timestamp": "2026-07-26T08:46:32.369Z"
+  },
+  {
+    "agentId": "TREASURY_AGENT",
+    "actionType": "GOVERNANCE_OVERRIDE",
+    "rationale": "Governance approved pending spend #3 ($1.2 USDC, above auto-execute threshold).",
+    "rationaleHash": "0xd6eeb7471ada47dd225970973ccc5bfaf5276911f8c00218cebf8e9582138118",
+    "txRef": "0x5c17aab1461cd357975f50acbfe1357358d00352895f4122675529471f68cd00",
+    "ledgerTxHash": "0x5304604eb12f10c42a77f47b1b37cee52094571e2bc73d280126509381e716a9",
+    "timestamp": "2026-07-26T08:46:39.001Z"
+  },
+  {
+    "agentId": "PROCUREMENT_AGENT",
+    "actionType": "ESCROW_OPEN",
+    "rationale": "Opened escrow for a $1.2 USDC supplier order.",
+    "rationaleHash": "0x1f03edf5f07220298536bd3e5f4cb54e75db49f2714c3791ad8f4340eb290cce",
+    "txRef": "0x8459dc47a1636b6f61195b19490a2461a7cb18029969ed433f91e2b44f9b6f58",
+    "ledgerTxHash": "0x1890711aa56cf8320e25b2640174c6bdcb48832cc35142e44ad836bc978bbdfb",
+    "timestamp": "2026-07-26T08:46:51.263Z"
+  },
+  {
+    "agentId": "SUPPLIER_AGENT",
+    "actionType": "SUPPLIER_QUOTE",
+    "rationale": "Quoted $1.2 USDC for Fresh produce restock, in stock and ready to ship.",
+    "rationaleHash": "0x0dd150133e5bdbce5bc7e3012c2d391500218e7c72a1a4b5f3069e08ea19a1b7",
+    "txRef": "0x8459dc47a1636b6f61195b19490a2461a7cb18029969ed433f91e2b44f9b6f58",
+    "ledgerTxHash": "0xd99d219bfae091047d2cf77fd7fec41f411fa920eb22cd737fa2fe3bffa028df",
+    "timestamp": "2026-07-26T08:46:54.175Z"
+  },
+  {
+    "agentId": "SUPPLIER_AGENT",
+    "actionType": "ESCROW_RELEASE",
+    "rationale": "Delivery confirmed: Mock validation (no vision model wired up yet): accepted \"Fresh produce restock delivered\" on trust.. Escrow payment #2 released.",
+    "rationaleHash": "0xac3e1a00d222e64d71fa50690dc10c5dfc8c1a68dd9eb8057349aa86e5b93046",
+    "txRef": "0x8d0d32e0e8d2f9ee8d83498c8208900d56b7f6d9529f69cd11771ad8ac03c85b",
+    "ledgerTxHash": "0xce7157c9c0e9dcc748047a2e8692050211cc6fbffd492450cf4f27f44b03b85e",
+    "timestamp": "2026-07-26T08:47:00.207Z"
+  }
+]

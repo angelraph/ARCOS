@@ -1,0 +1,27 @@
+node_modules/
+.next/
+dist/
+build/
+out/
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# Circle entity secret / keys — never commit
+*entity-secret*
+*.pem
+*.key
+recovery/
+
+# Foundry
+contracts/cache/
+contracts/out/
+contracts/broadcast/*/*/run-latest.json
+
+# misc
+.DS_Store
+*.log
+.vscode/
+.idea/

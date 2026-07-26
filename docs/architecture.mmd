@@ -1,0 +1,56 @@
+flowchart LR
+    Customer(["Customer Wallet"])
+
+    subgraph Flow["ARCOS Flow — Arc Testnet"]
+        direction TB
+
+        subgraph S1[" "]
+            direction LR
+            TP["TreasuryPolicy.sol\nTax / Payroll / Operating / Procurement"]
+            TA["Treasury Agent"]
+        end
+
+        subgraph S2[" "]
+            direction LR
+            PA["Procurement Agent"]
+            SA["Supplier Agent"]
+        end
+
+        subgraph S3[" "]
+            direction LR
+            GA["Governance Agent\n(simulated approver)"]
+            ES["Escrow.sol\n(from Circle arc-escrow)"]
+        end
+
+        DL[("DecisionLedger.sol\nevery decision: agent · action ·\nrationale hash · tx ref")]
+    end
+
+    Dashboard(["ARCOS Dashboard\nlive on-chain reads"])
+
+    Customer -- "pays USDC" --> TP
+    TP -- "allocates buckets" --> TA
+    TA -- "low-stock trigger" --> PA
+    PA -- "propose spend" --> TP
+    TP -. "over threshold" .-> GA
+    GA -- "approve" --> TP
+    PA -- "negotiate" --> SA
+    PA -- "open escrow" --> ES
+    SA -- "confirm delivery,\nrelease" --> ES
+    GA -. "refund if rejected" .-> ES
+
+    TA --> DL
+    PA --> DL
+    SA --> DL
+    GA --> DL
+
+    Flow --> Dashboard
+
+    style Customer fill:#0d121f,stroke:#35c7f0,color:#e7ecf6
+    style Dashboard fill:#0d121f,stroke:#35c7f0,color:#e7ecf6
+    style DL fill:#131a2b,stroke:#3b6dfa,color:#e7ecf6
+    style TP fill:#131a2b,stroke:#22304a,color:#e7ecf6
+    style ES fill:#131a2b,stroke:#22304a,color:#e7ecf6
+    style TA fill:#0d121f,stroke:#3b6dfa,color:#e7ecf6
+    style PA fill:#0d121f,stroke:#35c7f0,color:#e7ecf6
+    style SA fill:#0d121f,stroke:#34d399,color:#e7ecf6
+    style GA fill:#0d121f,stroke:#fbbf24,color:#e7ecf6

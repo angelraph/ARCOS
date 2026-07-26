@@ -1,0 +1,27 @@
+{
+  "name": "arcos",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "ARCOS — Autonomous Treasury Commerce System. Stablecoins Commerce Stack Challenge, Track 4: Best Agentic Economy Experience on Arc.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w apps/web",
+    "dev:agents": "npm run dev -w apps/agents",
+    "register-entity-secret": "tsx scripts/register-entity-secret.ts",
+    "create-wallets": "tsx scripts/create-wallets.ts",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "tsx": "^4.19.2"
+  },
+  "dependencies": {
+    "@circle-fin/developer-controlled-wallets": "^4.6.0",
+    "dotenv": "^16.4.5"
+  }
+}
