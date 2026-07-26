@@ -1,7 +1,16 @@
 import "./loadServerEnv"; // must run before @arcos/shared evaluates process.env-derived addresses
 import { createPublicClient, http, decodeEventLog, formatUnits, type AbiEvent, type Log } from "viem";
 import { arcTestnet } from "viem/chains";
+import { unstable_cache } from "next/cache";
 import { TreasuryPolicyAbi, EscrowAbi, DecisionLedgerAbi, addresses, ActionType, DEPLOYMENT_BLOCK } from "@arcos/shared";
+
+// Every dashboard view previously re-scanned the full on-chain history from
+// DEPLOYMENT_BLOCK to the current tip on every request (revalidate = 0 on the page).
+// That scan's cost — and its RPC call volume against Arc Testnet's rate-limited public
+// endpoint — only grows as the chain grows, so it gets more likely to trip "request limit
+// reached" over time, not less. Cache each read for a short window so concurrent/repeat
+// visitors share one scan instead of each triggering their own burst of calls.
+const CACHE_SECONDS = 15;
 
 // Arc Testnet's default RPC endpoint rate-limits under concurrent load (observed directly —
 // a handful of parallel eth_call reads on dashboard load was enough to trigger it). Retry
@@ -60,21 +69,25 @@ export interface BucketState {
   balanceUsdc: string;
 }
 
-export async function getBuckets(): Promise<BucketState[]> {
-  const result: BucketState[] = [];
-  for (const [i, name] of BUCKET_NAMES.entries()) {
-    const balance = await withRetry(() =>
-      publicClient.readContract({
-        address: addresses.treasuryPolicy as `0x${string}`,
-        abi: TreasuryPolicyAbi,
-        functionName: "bucketBalance",
-        args: [i],
-      }),
-    );
-    result.push({ name, balanceUsdc: formatUnits(balance as bigint, 6) });
-  }
-  return result;
-}
+export const getBuckets = unstable_cache(
+  async (): Promise<BucketState[]> => {
+    const result: BucketState[] = [];
+    for (const [i, name] of BUCKET_NAMES.entries()) {
+      const balance = await withRetry(() =>
+        publicClient.readContract({
+          address: addresses.treasuryPolicy as `0x${string}`,
+          abi: TreasuryPolicyAbi,
+          functionName: "bucketBalance",
+          args: [i],
+        }),
+      );
+      result.push({ name, balanceUsdc: formatUnits(balance as bigint, 6) });
+    }
+    return result;
+  },
+  ["arcos-buckets"],
+  { revalidate: CACHE_SECONDS },
+);
 
 export interface DecisionRow {
   decisionId: string;
@@ -93,7 +106,8 @@ function bytes32ToAsciiLabel(hex: `0x${string}`): string {
   return trimmed.toString("utf8") || hex;
 }
 
-export async function getDecisions(): Promise<DecisionRow[]> {
+export const getDecisions = unstable_cache(
+  async (): Promise<DecisionRow[]> => {
   const logs = await getLogsPaginated({
     address: addresses.decisionLedger as `0x${string}`,
     event: {
@@ -135,7 +149,10 @@ export async function getDecisions(): Promise<DecisionRow[]> {
       };
     })
     .sort((a, b) => Number(b.decisionId) - Number(a.decisionId));
-}
+  },
+  ["arcos-decisions"],
+  { revalidate: CACHE_SECONDS },
+);
 
 export interface PendingSpendRow {
   spendId: string;
@@ -146,39 +163,43 @@ export interface PendingSpendRow {
   executed: boolean;
 }
 
-export async function getPendingSpends(): Promise<PendingSpendRow[]> {
-  const count = (await withRetry(() =>
-    publicClient.readContract({
-      address: addresses.treasuryPolicy as `0x${string}`,
-      abi: TreasuryPolicyAbi,
-      functionName: "pendingSpendCount",
-    }),
-  )) as bigint;
-
-  const spends: PendingSpendRow[] = [];
-  for (let i = 0; i < Number(count); i++) {
-    const spendId = BigInt(i);
-    const result = (await withRetry(() =>
+export const getPendingSpends = unstable_cache(
+  async (): Promise<PendingSpendRow[]> => {
+    const count = (await withRetry(() =>
       publicClient.readContract({
         address: addresses.treasuryPolicy as `0x${string}`,
         abi: TreasuryPolicyAbi,
-        functionName: "pendingSpends",
-        args: [spendId],
+        functionName: "pendingSpendCount",
       }),
-    )) as readonly [string, bigint, number, `0x${string}`, boolean, boolean];
+    )) as bigint;
 
-    spends.push({
-      spendId: spendId.toString(),
-      to: result[0] as `0x${string}`,
-      amountUsdc: formatUnits(result[1], 6),
-      bucketIndex: result[2],
-      approved: result[4],
-      executed: result[5],
-    });
-  }
+    const spends: PendingSpendRow[] = [];
+    for (let i = 0; i < Number(count); i++) {
+      const spendId = BigInt(i);
+      const result = (await withRetry(() =>
+        publicClient.readContract({
+          address: addresses.treasuryPolicy as `0x${string}`,
+          abi: TreasuryPolicyAbi,
+          functionName: "pendingSpends",
+          args: [spendId],
+        }),
+      )) as readonly [string, bigint, number, `0x${string}`, boolean, boolean];
 
-  return spends.reverse();
-}
+      spends.push({
+        spendId: spendId.toString(),
+        to: result[0] as `0x${string}`,
+        amountUsdc: formatUnits(result[1], 6),
+        bucketIndex: result[2],
+        approved: result[4],
+        executed: result[5],
+      });
+    }
+
+    return spends.reverse();
+  },
+  ["arcos-pending-spends"],
+  { revalidate: CACHE_SECONDS },
+);
 
 export interface EscrowPayment {
   paymentId: string;
@@ -189,45 +210,49 @@ export interface EscrowPayment {
   withdrawn: boolean;
 }
 
-export async function getEscrowPayments(): Promise<EscrowPayment[]> {
-  const logs = await getLogsPaginated({
-    address: addresses.escrow as `0x${string}`,
-    event: {
-      type: "event",
-      name: "PaymentCreated",
-      inputs: [
-        { name: "paymentID", type: "uint256", indexed: true },
-        { name: "to", type: "address", indexed: true },
-        { name: "amount", type: "uint256", indexed: false },
-        { name: "releaseTimestamp", type: "uint256", indexed: false },
-        { name: "refundTo", type: "address", indexed: true },
-      ],
-    },
-  });
-
-  const payments: EscrowPayment[] = [];
-  for (const log of logs) {
-    const decoded = decodeEventLog({ abi: EscrowAbi, data: log.data, topics: log.topics });
-    const args = decoded.args as unknown as { paymentID: bigint; to: `0x${string}`; amount: bigint; refundTo: `0x${string}` };
-
-    const onChainPayment = (await withRetry(() =>
-      publicClient.readContract({
-        address: addresses.escrow as `0x${string}`,
-        abi: EscrowAbi,
-        functionName: "payments",
-        args: [args.paymentID],
-      }),
-    )) as readonly [string, bigint, bigint, string, bigint, boolean];
-
-    payments.push({
-      paymentId: args.paymentID.toString(),
-      to: args.to,
-      amountUsdc: formatUnits(args.amount, 6),
-      refundTo: args.refundTo,
-      refunded: onChainPayment[5],
-      withdrawn: onChainPayment[4] > 0n, // withdrawnAmount
+export const getEscrowPayments = unstable_cache(
+  async (): Promise<EscrowPayment[]> => {
+    const logs = await getLogsPaginated({
+      address: addresses.escrow as `0x${string}`,
+      event: {
+        type: "event",
+        name: "PaymentCreated",
+        inputs: [
+          { name: "paymentID", type: "uint256", indexed: true },
+          { name: "to", type: "address", indexed: true },
+          { name: "amount", type: "uint256", indexed: false },
+          { name: "releaseTimestamp", type: "uint256", indexed: false },
+          { name: "refundTo", type: "address", indexed: true },
+        ],
+      },
     });
-  }
 
-  return payments.sort((a, b) => Number(b.paymentId) - Number(a.paymentId));
-}
+    const payments: EscrowPayment[] = [];
+    for (const log of logs) {
+      const decoded = decodeEventLog({ abi: EscrowAbi, data: log.data, topics: log.topics });
+      const args = decoded.args as unknown as { paymentID: bigint; to: `0x${string}`; amount: bigint; refundTo: `0x${string}` };
+
+      const onChainPayment = (await withRetry(() =>
+        publicClient.readContract({
+          address: addresses.escrow as `0x${string}`,
+          abi: EscrowAbi,
+          functionName: "payments",
+          args: [args.paymentID],
+        }),
+      )) as readonly [string, bigint, bigint, string, bigint, boolean];
+
+      payments.push({
+        paymentId: args.paymentID.toString(),
+        to: args.to,
+        amountUsdc: formatUnits(args.amount, 6),
+        refundTo: args.refundTo,
+        refunded: onChainPayment[5],
+        withdrawn: onChainPayment[4] > 0n, // withdrawnAmount
+      });
+    }
+
+    return payments.sort((a, b) => Number(b.paymentId) - Number(a.paymentId));
+  },
+  ["arcos-escrow-payments"],
+  { revalidate: CACHE_SECONDS },
+);
