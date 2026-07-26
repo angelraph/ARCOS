@@ -1,6 +1,7 @@
 import { keccak256, stringToBytes, stringToHex, type Hex } from "viem";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { ActionType } from "@arcos/shared";
 import type { ContractSigner } from "./signers/types";
 
@@ -8,7 +9,10 @@ import type { ContractSigner } from "./signers/types";
 // shape either way: the full rationale text lives off-chain; only its keccak256 hash is
 // pinned on DecisionLedger. The dashboard later recomputes this hash client-side and
 // checks it against the on-chain value.
-const rationaleStorePath = path.resolve(process.cwd(), "data/rationales.json");
+// Vercel's deployed filesystem is read-only outside os.tmpdir() — use that there.
+const rationaleStorePath = process.env.VERCEL
+  ? path.join(os.tmpdir(), "arcos-rationales.json")
+  : path.resolve(process.cwd(), "data/rationales.json");
 
 function loadStore(): unknown[] {
   if (!existsSync(rationaleStorePath)) return [];

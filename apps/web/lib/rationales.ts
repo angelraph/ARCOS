@@ -1,11 +1,16 @@
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { keccak256, stringToBytes } from "viem";
 
 // Shared local store written by apps/agents/src/ledger.ts — stands in for Supabase until
 // that's wired up. Reading it directly (rather than duplicating storage) keeps rationale
 // text and on-chain hash in one place during this build phase.
-const rationaleStorePath = path.resolve(process.cwd(), "../agents/data/rationales.json");
+// Must match the path ledger.ts writes to — Vercel's filesystem is read-only outside
+// os.tmpdir(), and only persists for the lifetime of a given serverless instance.
+const rationaleStorePath = process.env.VERCEL
+  ? path.join(os.tmpdir(), "arcos-rationales.json")
+  : path.resolve(process.cwd(), "../agents/data/rationales.json");
 
 export interface RationaleEntry {
   agentId: string;
