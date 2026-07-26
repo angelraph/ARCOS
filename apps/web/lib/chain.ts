@@ -29,8 +29,10 @@ const BUCKET_NAMES = ["Tax", "Payroll", "Operating", "Procurement"] as const;
 
 // Arc Testnet's default RPC returns "request limit reached" (code -32011) as a normal
 // JSON-RPC response body, not a network-level failure — viem's own retryCount/retryDelay
-// don't retry that (they're for transport-level failures). Retry it ourselves.
-async function withRetry<T>(fn: () => Promise<T>, attempts = 6, baseDelayMs = 600): Promise<T> {
+// don't retry that (they're for transport-level failures). Retry it ourselves, with
+// exponential (not linear) backoff — a burst of concurrent dashboard loads needs more
+// runway to clear than a single slow request does.
+async function withRetry<T>(fn: () => Promise<T>, attempts = 8, baseDelayMs = 500): Promise<T> {
   let lastError: unknown;
   for (let i = 0; i < attempts; i++) {
     try {
@@ -39,29 +41,67 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 6, baseDelayMs = 60
       lastError = err;
       const message = err instanceof Error ? err.message : String(err);
       if (!message.includes("request limit")) throw err;
-      await new Promise((r) => setTimeout(r, baseDelayMs * (i + 1)));
+      await new Promise((r) => setTimeout(r, baseDelayMs * 2 ** i));
     }
   }
   throw lastError;
 }
 
-// Arc Testnet's eth_getLogs caps ranges at 10,000 blocks. The chain is already at block
-// ~53.7M, and that gap only grows over time, so a single fromBlock/toBlock query will
-// eventually break again even with a fixed DEPLOYMENT_BLOCK start — paginate instead of
-// hoping the range stays small.
+// Arc Testnet's eth_getLogs caps ranges at 10,000 blocks.
 const MAX_LOG_RANGE = 9_999n;
 
-async function getLogsPaginated(params: { address: `0x${string}`; event: AbiEvent }): Promise<Log[]> {
-  const latest = await withRetry(() => publicClient.getBlockNumber());
+async function getLogsRange(params: { address: `0x${string}`; event: AbiEvent }, fromBlock: bigint, toBlock: bigint): Promise<Log[]> {
   const logs: Log[] = [];
-  for (let from = DEPLOYMENT_BLOCK; from <= latest; from += MAX_LOG_RANGE + 1n) {
-    const to = from + MAX_LOG_RANGE > latest ? latest : from + MAX_LOG_RANGE;
+  for (let from = fromBlock; from <= toBlock; from += MAX_LOG_RANGE + 1n) {
+    const to = from + MAX_LOG_RANGE > toBlock ? toBlock : from + MAX_LOG_RANGE;
     const chunk = await withRetry(() =>
       publicClient.getLogs({ address: params.address, event: params.event, fromBlock: from, toBlock: to }),
     );
     logs.push(...chunk);
   }
   return logs;
+}
+
+// Scanning the full history from DEPLOYMENT_BLOCK on every request means the RPC call
+// volume — and the odds of tripping Arc Testnet's rate limit — grows forever as the chain
+// grows. Keep an incremental, per-instance cache of "logs found so far" + "highest block
+// scanned" per (address, event) pair, so steady-state reads only ever fetch the small
+// delta since the last successful scan, not the whole history. In-flight promises are
+// also deduped so concurrent requests on a warm instance share one fetch instead of each
+// re-scanning independently.
+interface LogCacheEntry {
+  logs: Log[];
+  scannedTo: bigint;
+  lastFetch: number;
+}
+const logCache = new Map<string, LogCacheEntry>();
+const logCacheInFlight = new Map<string, Promise<Log[]>>();
+
+async function getLogsIncremental(cacheKey: string, params: { address: `0x${string}`; event: AbiEvent }): Promise<Log[]> {
+  const cached = logCache.get(cacheKey);
+  if (cached && Date.now() - cached.lastFetch < CACHE_SECONDS * 1000) {
+    return cached.logs;
+  }
+
+  const inFlight = logCacheInFlight.get(cacheKey);
+  if (inFlight) return inFlight;
+
+  const promise = (async () => {
+    try {
+      const latest = await withRetry(() => publicClient.getBlockNumber());
+      const fromBlock = cached ? cached.scannedTo + 1n : DEPLOYMENT_BLOCK;
+
+      const newLogs = fromBlock <= latest ? await getLogsRange(params, fromBlock, latest) : [];
+      const merged = cached ? [...cached.logs, ...newLogs] : newLogs;
+      logCache.set(cacheKey, { logs: merged, scannedTo: latest, lastFetch: Date.now() });
+      return merged;
+    } finally {
+      logCacheInFlight.delete(cacheKey);
+    }
+  })();
+
+  logCacheInFlight.set(cacheKey, promise);
+  return promise;
 }
 
 export interface BucketState {
@@ -106,9 +146,8 @@ function bytes32ToAsciiLabel(hex: `0x${string}`): string {
   return trimmed.toString("utf8") || hex;
 }
 
-export const getDecisions = unstable_cache(
-  async (): Promise<DecisionRow[]> => {
-  const logs = await getLogsPaginated({
+export async function getDecisions(): Promise<DecisionRow[]> {
+  const logs = await getLogsIncremental("decisions", {
     address: addresses.decisionLedger as `0x${string}`,
     event: {
       type: "event",
@@ -149,10 +188,7 @@ export const getDecisions = unstable_cache(
       };
     })
     .sort((a, b) => Number(b.decisionId) - Number(a.decisionId));
-  },
-  ["arcos-decisions"],
-  { revalidate: CACHE_SECONDS },
-);
+}
 
 export interface PendingSpendRow {
   spendId: string;
@@ -210,49 +246,45 @@ export interface EscrowPayment {
   withdrawn: boolean;
 }
 
-export const getEscrowPayments = unstable_cache(
-  async (): Promise<EscrowPayment[]> => {
-    const logs = await getLogsPaginated({
-      address: addresses.escrow as `0x${string}`,
-      event: {
-        type: "event",
-        name: "PaymentCreated",
-        inputs: [
-          { name: "paymentID", type: "uint256", indexed: true },
-          { name: "to", type: "address", indexed: true },
-          { name: "amount", type: "uint256", indexed: false },
-          { name: "releaseTimestamp", type: "uint256", indexed: false },
-          { name: "refundTo", type: "address", indexed: true },
-        ],
-      },
+export async function getEscrowPayments(): Promise<EscrowPayment[]> {
+  const logs = await getLogsIncremental("escrow-payments", {
+    address: addresses.escrow as `0x${string}`,
+    event: {
+      type: "event",
+      name: "PaymentCreated",
+      inputs: [
+        { name: "paymentID", type: "uint256", indexed: true },
+        { name: "to", type: "address", indexed: true },
+        { name: "amount", type: "uint256", indexed: false },
+        { name: "releaseTimestamp", type: "uint256", indexed: false },
+        { name: "refundTo", type: "address", indexed: true },
+      ],
+    },
+  });
+
+  const payments: EscrowPayment[] = [];
+  for (const log of logs) {
+    const decoded = decodeEventLog({ abi: EscrowAbi, data: log.data, topics: log.topics });
+    const args = decoded.args as unknown as { paymentID: bigint; to: `0x${string}`; amount: bigint; refundTo: `0x${string}` };
+
+    const onChainPayment = (await withRetry(() =>
+      publicClient.readContract({
+        address: addresses.escrow as `0x${string}`,
+        abi: EscrowAbi,
+        functionName: "payments",
+        args: [args.paymentID],
+      }),
+    )) as readonly [string, bigint, bigint, string, bigint, boolean];
+
+    payments.push({
+      paymentId: args.paymentID.toString(),
+      to: args.to,
+      amountUsdc: formatUnits(args.amount, 6),
+      refundTo: args.refundTo,
+      refunded: onChainPayment[5],
+      withdrawn: onChainPayment[4] > 0n, // withdrawnAmount
     });
+  }
 
-    const payments: EscrowPayment[] = [];
-    for (const log of logs) {
-      const decoded = decodeEventLog({ abi: EscrowAbi, data: log.data, topics: log.topics });
-      const args = decoded.args as unknown as { paymentID: bigint; to: `0x${string}`; amount: bigint; refundTo: `0x${string}` };
-
-      const onChainPayment = (await withRetry(() =>
-        publicClient.readContract({
-          address: addresses.escrow as `0x${string}`,
-          abi: EscrowAbi,
-          functionName: "payments",
-          args: [args.paymentID],
-        }),
-      )) as readonly [string, bigint, bigint, string, bigint, boolean];
-
-      payments.push({
-        paymentId: args.paymentID.toString(),
-        to: args.to,
-        amountUsdc: formatUnits(args.amount, 6),
-        refundTo: args.refundTo,
-        refunded: onChainPayment[5],
-        withdrawn: onChainPayment[4] > 0n, // withdrawnAmount
-      });
-    }
-
-    return payments.sort((a, b) => Number(b.paymentId) - Number(a.paymentId));
-  },
-  ["arcos-escrow-payments"],
-  { revalidate: CACHE_SECONDS },
-);
+  return payments.sort((a, b) => Number(b.paymentId) - Number(a.paymentId));
+}
