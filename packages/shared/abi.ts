@@ -3,12 +3,13 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const contractsOut = path.resolve(__dirname, "../../contracts/out");
+// contracts/out/ is a gitignored Foundry build artifact, unavailable at deploy time.
+// abis/ is a committed copy extracted from it — regenerate after any contract change
+// by re-running the extraction in contracts/ (forge build) and copying the abi field.
+const abisDir = path.resolve(__dirname, "abis");
 
-// Reads the ABI straight from Foundry's compiled artifact so it can never drift from
-// the actually-deployed bytecode. Run `forge build` in contracts/ before using this.
 export function loadAbi(contractName: "DecisionLedger" | "TreasuryPolicy" | "Escrow") {
-  const artifactPath = path.join(contractsOut, `${contractName}.sol`, `${contractName}.json`);
+  const artifactPath = path.join(abisDir, `${contractName}.json`);
   const artifact = JSON.parse(readFileSync(artifactPath, "utf-8"));
   return artifact.abi as readonly unknown[];
 }

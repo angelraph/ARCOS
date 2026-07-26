@@ -25,3 +25,6 @@ contracts/broadcast/*/*/run-latest.json
 *.log
 .vscode/
 .idea/
+
+.vercel
+.env*
