@@ -33,6 +33,8 @@ async function main() {
       treasuryPolicyAddress: env.TREASURY_POLICY_ADDRESS as `0x${string}`,
       escrowAddress: env.ESCROW_ADDRESS as `0x${string}`,
       ledgerAddress: env.DECISION_LEDGER_ADDRESS as `0x${string}`,
+      gatewayBuyerPrivateKey: env.PROCUREMENT_GATEWAY_PRIVATE_KEY as `0x${string}` | undefined,
+      quoteFeeUsdc: env.SUPPLIER_QUOTE_FEE_USDC,
     },
     paymentUsdc,
     procurementUsdc,

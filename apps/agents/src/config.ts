@@ -21,6 +21,12 @@ const envSchema = z.object({
   CIRCLE_WALLET_ID_CUSTOMER: z.string().optional(),
 
   OPENAI_API_KEY: z.string().optional(),
+
+  // A small, purpose-scoped local EOA that pays the Supplier Agent's quote endpoint via
+  // Circle Gateway (x402) — see apps/agents/src/gateway/quoteClient.ts. Optional: when
+  // unset, the flow falls back to an in-process quote with no real payment.
+  PROCUREMENT_GATEWAY_PRIVATE_KEY: z.string().startsWith("0x").optional(),
+  SUPPLIER_QUOTE_FEE_USDC: z.string().default("0.02"),
 });
 
 export type ArcosEnv = z.infer<typeof envSchema>;

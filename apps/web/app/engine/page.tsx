@@ -53,7 +53,24 @@ export default function EnginePage() {
           </div>
 
           <div className="card p-6">
-            <h2 className="font-medium">3. Escrow.sol: funds don&apos;t move until delivery is confirmed</h2>
+            <h2 className="font-medium">3. Circle Gateway (x402): the Supplier&apos;s quote is a real, paid nanopayment</h2>
+            <p className="mt-2 text-sm text-muted">
+              Before the Procurement Agent opens escrow, it pays the Supplier Agent&apos;s quote endpoint a real,
+              sub-cent, gas-free micropayment over the x402 protocol via <code className="mono">@circle-fin/x402-batching</code>.
+              The Supplier Agent&apos;s side is a throwaway local HTTP endpoint gated by{" "}
+              <code className="mono">gateway.require(...)</code>; the money movement itself is not local at all,
+              it&apos;s signed with an EIP-3009 authorization and settled by Circle&apos;s real Gateway facilitator. This
+              is the one leg of ARCOS that deliberately isn&apos;t a Circle Developer-Controlled Wallet: x402 payments
+              need client-side signing, so a small, purpose-scoped local key handles only this sub-cent negotiation
+              fee and never touches treasury funds. If no Gateway key is configured, or if Circle&apos;s facilitator
+              doesn&apos;t settle the payment, the flow falls back to an in-process (unpaid) quote rather than
+              failing — see <Link href="https://github.com/angelraph/ARCOS/blob/main/docs/circle-feedback.md" className="text-accent hover:underline">circle-feedback.md</Link> for
+              a specific settlement rejection we hit and reported.
+            </p>
+          </div>
+
+          <div className="card p-6">
+            <h2 className="font-medium">4. Escrow.sol: funds don&apos;t move until delivery is confirmed</h2>
             <p className="mt-2 text-sm text-muted">
               Adapted from Circle&apos;s own <code className="mono">arc-escrow</code> sample. The Procurement Agent
               opens a payment naming a recipient and a refund address. The Supplier Agent can only withdraw once
@@ -68,7 +85,7 @@ export default function EnginePage() {
           </div>
 
           <div className="card p-6">
-            <h2 className="font-medium">4. DecisionLedger.sol: the part that makes this trustworthy</h2>
+            <h2 className="font-medium">5. DecisionLedger.sol: the part that makes this trustworthy</h2>
             <p className="mt-2 text-sm text-muted">
               Every decision above (a treasury allocation, a procurement order, a supplier quote, an escrow open or
               release, a governance override) gets one on-chain event: which agent, what kind of action, a keccak256
@@ -81,6 +98,20 @@ export default function EnginePage() {
             </p>
             <p className="mt-2 text-xs text-muted">
               Contract: <ExplorerLink href={explorerAddressUrl(addresses.decisionLedger)} value={addresses.decisionLedger} />
+            </p>
+          </div>
+
+          <div className="card p-6">
+            <h2 className="font-medium">Stretch: Circle Bridge Kit (CCTPv2) treasury rebalance</h2>
+            <p className="mt-2 text-sm text-muted">
+              A standalone demo, separate from the core payment→escrow sequence above: a Treasury rebalance that
+              bridges idle Arc Testnet USDC to another CCTPv2-supported chain via <code className="mono">@circle-fin/bridge-kit</code>&apos;s
+              <code className="mono"> kit.bridge()</code>, using Circle&apos;s Orbit relayer so no destination-chain
+              gas wallet is needed. Run for real (not just coded against the docs): approve, burn, attestation, and
+              a forwarded mint all reported success, and the destination balance was independently confirmed via a
+              plain <code className="mono">balanceOf</code> RPC call on Base Sepolia, not just trusted from the
+              SDK&apos;s own report. See <code className="mono">apps/agents/src/bridge/</code> and{" "}
+              <code className="mono">scripts/bridge-treasury-demo.ts</code>.
             </p>
           </div>
         </section>

@@ -1,15 +1,20 @@
-import { parseUnits } from "viem";
+import { parseUnits, type Hex } from "viem";
 import { TreasuryAgent } from "./agents/treasuryAgent";
 import { ProcurementAgent } from "./agents/procurementAgent";
 import { SupplierAgent } from "./agents/supplierAgent";
 import { GovernanceAgent } from "./agents/governanceAgent";
 import { isSpendExecuted } from "./chainReader";
+import { startQuoteServer } from "./gateway/quoteServer";
+import { requestPaidQuote } from "./gateway/quoteClient";
 import type { AgentSigners } from "./signers";
 
 export interface OrchestratorConfig {
   treasuryPolicyAddress: `0x${string}`;
   escrowAddress: `0x${string}`;
   ledgerAddress: `0x${string}`;
+  /** See gateway/quoteClient.ts. Omit to skip the paid-quote leg entirely. */
+  gatewayBuyerPrivateKey?: Hex;
+  quoteFeeUsdc?: string;
 }
 
 export interface FlowStep {
@@ -48,7 +53,7 @@ export async function runFlow(
   onStep: StepListener = () => {},
   recipientAddress?: `0x${string}`,
 ) {
-  const TOTAL = 6;
+  const TOTAL = 7;
   const treasuryAgent = new TreasuryAgent(signers.treasury, config.treasuryPolicyAddress, config.ledgerAddress);
   const procurementAgent = new ProcurementAgent(signers.procurement, config.treasuryPolicyAddress, config.escrowAddress, config.ledgerAddress);
   const supplierAgent = new SupplierAgent(signers.supplier, config.escrowAddress, config.ledgerAddress);
@@ -90,12 +95,43 @@ export async function runFlow(
     onStep({ step: 3, totalSteps: TOTAL, label: "No governance approval needed (under threshold)." });
   }
 
-  const quote = await supplierAgent.quote("Fresh produce restock", procurementAtomic);
-  onStep({ step: 4, totalSteps: TOTAL, label: `Supplier Agent quoted: "${quote.rationale}"` });
+  let quote: { rationale: string };
+  if (config.gatewayBuyerPrivateKey) {
+    const feeUsdc = config.quoteFeeUsdc ?? "0.02";
+    const quoteServer = await startQuoteServer(supplierAgent, signers.supplier.address, feeUsdc);
+    try {
+      const paid = await requestPaidQuote(quoteServer.url, "Fresh produce restock", procurementAtomic, config.gatewayBuyerPrivateKey);
+      quote = { rationale: `${paid.rationale} (Quote paid for with a $${paid.feeUsdc} USDC gas-free Circle Gateway/x402 micropayment.)` };
+      onStep({
+        step: 4,
+        totalSteps: TOTAL,
+        label: `Procurement Agent paid $${feeUsdc} USDC gas-free via Circle Gateway (x402) for the Supplier Agent's quote.`,
+        txHash: /^0x[a-fA-F0-9]{64}$/.test(paid.settlementRef) ? (paid.settlementRef as `0x${string}`) : undefined,
+      });
+    } catch (err) {
+      // Gateway is a live third-party settlement network the flow doesn't control — a
+      // rejected/unavailable payment degrades to the unpaid quote rather than failing the
+      // whole run. See docs/circle-feedback.md for a specific reproduction of one such
+      // rejection (authorization_validity_too_short) hit against Arc Testnet during this build.
+      const message = err instanceof Error ? err.message : String(err);
+      quote = await supplierAgent.quote("Fresh produce restock", procurementAtomic);
+      onStep({
+        step: 4,
+        totalSteps: TOTAL,
+        label: `Circle Gateway payment for the quote didn't settle (${message}) — falling back to an unpaid quote.`,
+      });
+    } finally {
+      await quoteServer.close();
+    }
+  } else {
+    quote = await supplierAgent.quote("Fresh produce restock", procurementAtomic);
+    onStep({ step: 4, totalSteps: TOTAL, label: "No Gateway buyer key configured — skipping the paid-quote leg." });
+  }
+  onStep({ step: 5, totalSteps: TOTAL, label: `Supplier Agent quoted: "${quote.rationale}"` });
 
   const escrow = await procurementAgent.openEscrow(recipient, procurementAtomic, quote.rationale);
   onStep({
-    step: 5,
+    step: 6,
     totalSteps: TOTAL,
     label: isCustomRecipient
       ? `Procurement Agent opened escrow (payment #${escrow.paymentId}) to your address.`
@@ -105,7 +141,7 @@ export async function runFlow(
 
   if (isCustomRecipient) {
     onStep({
-      step: 6,
+      step: 7,
       totalSteps: TOTAL,
       label: `Funds are now held in escrow for ${recipient}. Only that wallet can release them by calling withdraw, or Governance can refund the payer. ARCOS won't release it on your behalf.`,
     });
@@ -115,9 +151,9 @@ export async function runFlow(
   const release = await supplierAgent.confirmAndRelease(escrow.paymentId, { description: "Fresh produce restock delivered" });
 
   if (release.approved) {
-    onStep({ step: 6, totalSteps: TOTAL, label: "Delivery confirmed. Escrow released to Supplier.", txHash: release.txHash });
+    onStep({ step: 7, totalSteps: TOTAL, label: "Delivery confirmed. Escrow released to Supplier.", txHash: release.txHash });
   } else {
     const refund = await governanceAgent.refundEscrow(escrow.paymentId, "Delivery validation failed");
-    onStep({ step: 6, totalSteps: TOTAL, label: "Delivery rejected. Governance refunded the payer.", txHash: refund.txHash });
+    onStep({ step: 7, totalSteps: TOTAL, label: "Delivery rejected. Governance refunded the payer.", txHash: refund.txHash });
   }
 }

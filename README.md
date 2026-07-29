@@ -29,6 +29,7 @@ Incoming USDC payment
   -> Treasury Agent        (allocates into policy buckets)
   -> Procurement Agent     (proposes a spend, negotiates with Supplier Agent)
   -> Governance gate       (any spend above threshold pauses for approval, enforced on-chain)
+  -> Gateway nanopayment   (Procurement pays Supplier's quote endpoint gas-free via x402)
   -> Escrow                (opens for the recipient)
   -> delivery confirmation (AI-vision seam, reused from arc-escrow)
   -> Escrow release        (or refund by Governance if delivery fails)
@@ -43,10 +44,12 @@ See [`docs/architecture.png`](docs/architecture.png) for the full diagram (also 
 apps/
   web/          Next.js site: landing, engine explainer, live execution page, dashboard
   agents/       Node/TS agent engine: Treasury, Procurement, Supplier, Governance
+                  src/gateway/  Circle Gateway (x402) quote-fee server + client
+                  src/bridge/   Circle Bridge Kit (CCTPv2) cross-chain treasury rebalance
 contracts/      Foundry project: DecisionLedger.sol, TreasuryPolicy.sol, Escrow.sol
 packages/
   shared/       ABIs, deployed addresses, Circle Wallets SDK wrapper, shared TS types
-scripts/        One-time setup scripts (entity secret registration, wallet creation)
+scripts/        One-time setup scripts (entity secret registration, wallet creation, Gateway deposit, bridge demo)
 docs/
   brand/        ARCOS logo and brand assets
   architecture.png / architecture.mmd
@@ -54,7 +57,7 @@ docs/
 ```
 
 Built on top of two official Circle sample repos rather than from scratch:
-- [`circlefin/arc-nanopayments`](https://github.com/circlefin/arc-nanopayments): LangChain agent and x402-protected endpoints via `@circle-fin/x402-batching`
+- [`circlefin/arc-nanopayments`](https://github.com/circlefin/arc-nanopayments): the pattern for x402-protected endpoints via `@circle-fin/x402-batching`, adapted so the Procurement Agent pays a real Circle Gateway micropayment for the Supplier Agent's quote (`apps/agents/src/gateway/`)
 - [`circlefin/arc-escrow`](https://github.com/circlefin/arc-escrow): escrow and AI-validated deliverable release via `@circle-fin/developer-controlled-wallets`
 
 `apps/web` reuses the agent engine directly (`@arcos/agents/orchestrator`) rather than shelling out to a CLI, so the live `/run` page executes the exact same code path as the command-line tool.
@@ -75,13 +78,16 @@ Built on top of two official Circle sample repos rather than from scratch:
 4. `npm run create-wallets` to create the five agent wallets (Treasury, Procurement, Supplier, Governance, Customer) on Arc Testnet. Fund them from the Developer Console's faucet (by wallet ID, not address) with both native gas and USDC.
 5. Copy `.env.example` to `.env` and fill in values as each step above produces them.
 6. `cd contracts && forge build && forge test` to confirm the contract suite passes, then `forge script script/Deploy.s.sol:Deploy --rpc-url arc_testnet --broadcast` to deploy.
-7. `npm run dev:web` to run the site locally, or `npm run dev:agents` / `npm run start -w apps/agents` to run the agent engine from the command line.
+7. **Circle Gateway (x402 nanopayments), optional but recommended**: generate a fresh local key (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`, prefixed with `0x`), fund its address with a couple dollars of USDC + native gas via [faucet.circle.com](https://faucet.circle.com), set it as `PROCUREMENT_GATEWAY_PRIVATE_KEY` in `.env`, then run `npm run setup-gateway` to deposit it into Gateway. This has to be a raw local key rather than a Circle wallet — see [`docs/circle-feedback.md`](docs/circle-feedback.md) for why. Leave it blank to skip this leg; the flow still runs, just without the paid-quote step.
+8. **Circle Bridge Kit (CCTPv2), optional stretch demo**: generate another fresh local key the same way, fund it on Arc Testnet via [faucet.circle.com](https://faucet.circle.com), set it as `TREASURY_BRIDGE_PRIVATE_KEY` in `.env`, then run `npm run bridge-treasury-demo -- --amount=1.00 --to=Base_Sepolia` to rebalance idle treasury USDC cross-chain via Circle's Orbit relayer — no destination-chain gas wallet needed. This is a standalone demonstration, separate from the core payment→escrow flow.
+9. `npm run dev:web` to run the site locally, or `npm run dev:agents` / `npm run start -w apps/agents` to run the agent engine from the command line.
 
 ## Verification
 
 - All 18 Foundry tests pass across the three contracts.
 - The full flow (payment, allocation, procurement spend, governance approval, supplier quote, escrow open, delivery confirmation, release) has been run multiple times end to end against real Circle Developer-Controlled Wallets on Arc Testnet, with every step's ground truth checked directly against contract state, not just trusted from logs.
 - The dashboard reads on-chain state directly (no cached or mocked data) and recomputes each Decision Ledger entry's rationale hash client-side to verify it against the on-chain value.
+- The Bridge Kit (CCTPv2) treasury rebalance demo has been run for real: $1.00 USDC bridged from Arc Testnet to Base Sepolia, with the destination balance independently confirmed via a direct `balanceOf` RPC call (not just the SDK's own report) — see `docs/circle-feedback.md` for the exact transaction hashes and numbers.
 
 ## Status
 

@@ -13,6 +13,8 @@
     "dev:agents": "npm run dev -w apps/agents",
     "register-entity-secret": "tsx scripts/register-entity-secret.ts",
     "create-wallets": "tsx scripts/create-wallets.ts",
+    "setup-gateway": "tsx scripts/setup-gateway.ts",
+    "bridge-treasury-demo": "tsx scripts/bridge-treasury-demo.ts",
     "build": "npm run build --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present"
   },
@@ -22,6 +24,7 @@
   },
   "dependencies": {
     "@circle-fin/developer-controlled-wallets": "^4.6.0",
+    "@circle-fin/x402-batching": "^2.1.0",
     "dotenv": "^16.4.5"
   }
 }

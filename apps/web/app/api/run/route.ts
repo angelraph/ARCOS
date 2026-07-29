@@ -48,6 +48,8 @@ export async function GET(req: NextRequest) {
             treasuryPolicyAddress: addresses.treasuryPolicy as `0x${string}`,
             escrowAddress: addresses.escrow as `0x${string}`,
             ledgerAddress: addresses.decisionLedger as `0x${string}`,
+            gatewayBuyerPrivateKey: process.env.PROCUREMENT_GATEWAY_PRIVATE_KEY as `0x${string}` | undefined,
+            quoteFeeUsdc: process.env.SUPPLIER_QUOTE_FEE_USDC,
           },
           paymentUsdc,
           procurementUsdc,
