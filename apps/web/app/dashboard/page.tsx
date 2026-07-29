@@ -1,8 +1,19 @@
+import { Suspense } from "react";
 import { BucketsPanel } from "@/components/BucketsPanel";
 import { EscrowPanel } from "@/components/EscrowPanel";
 import { GovernancePanel } from "@/components/GovernancePanel";
 import { DecisionLedgerPanel } from "@/components/DecisionLedgerPanel";
-import { getBuckets, getDecisions, getEscrowPayments, getPendingSpends } from "@/lib/chain";
+import { PanelSkeleton } from "@/components/PanelSkeleton";
+import {
+  getBuckets,
+  getDecisions,
+  getEscrowPayments,
+  getPendingSpends,
+  type BucketState,
+  type DecisionRow,
+  type EscrowPayment,
+  type PendingSpendRow,
+} from "@/lib/chain";
 import { getRationales } from "@/lib/rationales";
 import { addresses } from "@arcos/shared";
 import { explorerAddressUrl } from "@/lib/format";
@@ -10,18 +21,40 @@ import { ExplorerLink } from "@/components/ExplorerLink";
 
 export const revalidate = 0;
 
-export default async function DashboardPage() {
-  // Sequential, not Promise.all — Arc Testnet's default RPC endpoint rate-limits under
-  // concurrent load (observed directly), even with per-call multicall batching. This data
-  // volume is small enough that sequential fetches cost little.
-  const buckets = await getBuckets();
-  const decisions = await getDecisions();
-  const payments = await getEscrowPayments();
-  const pendingSpends = await getPendingSpends();
+async function BucketsPanelAsync({ promise }: { promise: Promise<BucketState[]> }) {
+  return <BucketsPanel buckets={await promise} />;
+}
+
+async function EscrowPanelAsync({ promise }: { promise: Promise<EscrowPayment[]> }) {
+  return <EscrowPanel payments={await promise} />;
+}
+
+async function GovernancePanelAsync({ promise }: { promise: Promise<PendingSpendRow[]> }) {
+  return <GovernancePanel spends={await promise} />;
+}
+
+async function DecisionLedgerPanelAsync({ promise }: { promise: Promise<DecisionRow[]> }) {
+  const decisions = await promise;
   const rationales = getRationales();
+  return <DecisionLedgerPanel decisions={decisions} rationales={rationales} />;
+}
+
+export default function DashboardPage() {
+  // Sequential, not Promise.all — Arc Testnet's default RPC endpoint rate-limits under
+  // concurrent load (observed directly), even with per-call multicall batching. Each promise
+  // still only starts once the previous one settles (same RPC load as before); wrapping each
+  // panel in its own Suspense boundary lets it stream in as soon as its own data resolves
+  // instead of blocking the whole page behind the slowest fetch.
+  const bucketsPromise = getBuckets();
+  const decisionsPromise = bucketsPromise.then(() => getDecisions());
+  const paymentsPromise = decisionsPromise.then(() => getEscrowPayments());
+  const pendingPromise = paymentsPromise.then(() => getPendingSpends());
 
   return (
-    <main className="flex-1 px-4 sm:px-6 py-6 space-y-6 max-w-7xl w-full mx-auto" style={{ "--gradient-angle": "160deg" } as React.CSSProperties}>
+    <main
+      className="flex-1 px-4 sm:px-6 py-6 space-y-6 max-w-7xl w-full mx-auto"
+      style={{ "--gradient-angle": "160deg" } as React.CSSProperties}
+    >
       <div>
         <h1 className="text-xl font-semibold">Live dashboard</h1>
         <p className="mt-1 text-sm text-muted">
@@ -34,14 +67,22 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      <BucketsPanel buckets={buckets} />
+      <Suspense fallback={<PanelSkeleton title="Treasury Buckets" rows={4} variant="grid" />}>
+        <BucketsPanelAsync promise={bucketsPromise} />
+      </Suspense>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <EscrowPanel payments={payments} />
-        <GovernancePanel spends={pendingSpends} />
+        <Suspense fallback={<PanelSkeleton title="Escrow" rows={3} />}>
+          <EscrowPanelAsync promise={paymentsPromise} />
+        </Suspense>
+        <Suspense fallback={<PanelSkeleton title="Governance" rows={3} />}>
+          <GovernancePanelAsync promise={pendingPromise} />
+        </Suspense>
       </div>
 
-      <DecisionLedgerPanel decisions={decisions} rationales={rationales} />
+      <Suspense fallback={<PanelSkeleton title="Decision Ledger" rows={4} />}>
+        <DecisionLedgerPanelAsync promise={decisionsPromise} />
+      </Suspense>
     </main>
   );
 }
