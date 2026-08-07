@@ -9,11 +9,17 @@ import { TreasuryPolicyAbi, EscrowAbi, DecisionLedgerAbi, addresses, ActionType,
 // without every visitor triggering their own round of reads.
 const CACHE_SECONDS = 15;
 
-// The historical event scans below (getDecisions/getEscrowPayments) are expensive, so they
-// stay cached for a long time -- freshness comes from keying the cache on decisionCount()
-// (see getFreshDecisionCount below), not from this window. This is only the time-based
-// safety net for the rare case decisionCount() itself can't be read.
-const LOG_SCAN_REVALIDATE_SECONDS = 3600;
+// How often the *expensive* part of the historical event scans below (DEPLOYMENT_BLOCK to
+// a recent checkpoint) gets recomputed. Kept short enough that the always-fresh "tail"
+// scan (checkpoint to current latest, see getDecisions/getEscrowPayments) stays cheap --
+// at most this many minutes' worth of new blocks, one getLogs call in practice -- while
+// still being long enough that concurrent visitors and back-to-back demo runs share one
+// recompute instead of each paying for it. This used to be keyed on decisionCount()
+// instead of time, so every single new decision anywhere forced a full DEPLOYMENT_BLOCK
+// rescan -- measured directly against production at up to 60s per request once enough
+// history had built up. That's fixed now; this window is just how long the historical
+// checkpoint can lag, not how stale the visible data can be (the tail always covers that).
+const HISTORICAL_CHECKPOINT_REVALIDATE_SECONDS = 20 * 60;
 
 // Arc's own primary RPC (rpc.testnet.arc.network) rate-limits after just 3-5 sequential
 // eth_getLogs calls (observed directly) — unusable for scanning hundreds of thousands of
@@ -46,28 +52,6 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 5, baseDelayMs = 40
     }
   }
   throw lastError;
-}
-
-// Cache-busting key for the two expensive log scans below, instead of relying on
-// revalidateTag. Tried revalidateTag(tag, { expire: 0 }) from /api/run first -- verified
-// directly against production (decisionCount() on-chain vs. the dashboard's reported
-// count) that it does NOT invalidate an unstable_cache-tagged entry on this Next.js
-// version, even though the call itself doesn't throw. Rather than depend on that, key the
-// cache on this cheap, always-fresh read of decisionCount() (a single eth_call, not a log
-// scan) -- every state-changing action in ARCOS's own flow (payment, spend, escrow open,
-// release, refund) always records a decision alongside it, so a changed count reliably
-// means changed data, and an unchanged count means the expensive scan below can safely be
-// skipped. This makes staleness structurally impossible rather than dependent on any
-// particular revalidation call actually working.
-async function getFreshDecisionCount(): Promise<string> {
-  const count = await withRetry(() =>
-    publicClient.readContract({
-      address: addresses.decisionLedger as `0x${string}`,
-      abi: DecisionLedgerAbi,
-      functionName: "decisionCount",
-    }),
-  );
-  return (count as bigint).toString();
 }
 
 // Arc Testnet's eth_getLogs caps ranges at 10,000 blocks.
@@ -127,69 +111,81 @@ function bytes32ToAsciiLabel(hex: `0x${string}`): string {
   return trimmed.toString("utf8") || hex;
 }
 
-// Wrapped in Next's durable Data Cache (unstable_cache), not the in-memory Map the
-// previous version used — that Map lived in one Lambda instance's process memory, so on
-// Vercel it was reset by every cold start, meaning nearly every real visitor paid the cost
-// of rescanning the full history (hundreds of thousands of blocks, in 10k-block chunks)
-// from DEPLOYMENT_BLOCK. unstable_cache's storage is shared and durable across
-// invocations, so once any request warms this key, every other request (any instance)
-// reads it instantly until decisionCount() changes (see getFreshDecisionCount) or
-// LOG_SCAN_REVALIDATE_SECONDS elapses.
-const getDecisionsCached = unstable_cache(
-  async (_decisionCount: string): Promise<DecisionRow[]> => {
-    const latest = await withRetry(() => publicClient.getBlockNumber());
-    const logs = await getLogsRange(
-      {
-        address: addresses.decisionLedger as `0x${string}`,
-        event: {
-          type: "event",
-          name: "DecisionRecorded",
-          inputs: [
-            { name: "decisionId", type: "uint256", indexed: true },
-            { name: "agentId", type: "bytes32", indexed: true },
-            { name: "actionType", type: "uint8", indexed: false },
-            { name: "rationaleHash", type: "bytes32", indexed: false },
-            { name: "txRef", type: "bytes32", indexed: false },
-            { name: "timestamp", type: "uint256", indexed: false },
-            { name: "recordedBy", type: "address", indexed: false },
-          ],
-        },
-      },
-      DEPLOYMENT_BLOCK,
-      latest,
-    );
+const DECISION_RECORDED_EVENT = {
+  type: "event",
+  name: "DecisionRecorded",
+  inputs: [
+    { name: "decisionId", type: "uint256", indexed: true },
+    { name: "agentId", type: "bytes32", indexed: true },
+    { name: "actionType", type: "uint8", indexed: false },
+    { name: "rationaleHash", type: "bytes32", indexed: false },
+    { name: "txRef", type: "bytes32", indexed: false },
+    { name: "timestamp", type: "uint256", indexed: false },
+    { name: "recordedBy", type: "address", indexed: false },
+  ],
+} satisfies AbiEvent;
 
-    return logs
-      .map((log) => {
-        const decoded = decodeEventLog({ abi: DecisionLedgerAbi, data: log.data, topics: log.topics });
-        const args = decoded.args as unknown as {
-          decisionId: bigint;
-          agentId: `0x${string}`;
-          actionType: number;
-          rationaleHash: `0x${string}`;
-          txRef: `0x${string}`;
-          timestamp: bigint;
-          recordedBy: `0x${string}`;
-        };
-        return {
-          decisionId: args.decisionId.toString(),
-          agentId: bytes32ToAsciiLabel(args.agentId),
-          actionType: ActionType[args.actionType] ?? String(args.actionType),
-          rationaleHash: args.rationaleHash,
-          txRef: args.txRef,
-          timestamp: new Date(Number(args.timestamp) * 1000).toISOString(),
-          recordedBy: args.recordedBy,
-          ledgerTxHash: log.transactionHash as `0x${string}`,
-        };
-      })
-      .sort((a, b) => Number(b.decisionId) - Number(a.decisionId));
+async function scanDecisionLogs(fromBlock: bigint, toBlock: bigint): Promise<DecisionRow[]> {
+  if (fromBlock > toBlock) return [];
+  const logs = await getLogsRange({ address: addresses.decisionLedger as `0x${string}`, event: DECISION_RECORDED_EVENT }, fromBlock, toBlock);
+  return logs.map((log) => {
+    const decoded = decodeEventLog({ abi: DecisionLedgerAbi, data: log.data, topics: log.topics });
+    const args = decoded.args as unknown as {
+      decisionId: bigint;
+      agentId: `0x${string}`;
+      actionType: number;
+      rationaleHash: `0x${string}`;
+      txRef: `0x${string}`;
+      timestamp: bigint;
+      recordedBy: `0x${string}`;
+    };
+    return {
+      decisionId: args.decisionId.toString(),
+      agentId: bytes32ToAsciiLabel(args.agentId),
+      actionType: ActionType[args.actionType] ?? String(args.actionType),
+      rationaleHash: args.rationaleHash,
+      txRef: args.txRef,
+      timestamp: new Date(Number(args.timestamp) * 1000).toISOString(),
+      recordedBy: args.recordedBy,
+      ledgerTxHash: log.transactionHash as `0x${string}`,
+    };
+  });
+}
+
+// Two-tier scan, wrapped in Next's durable Data Cache (unstable_cache) rather than the
+// in-memory Map the original version used (that Map lived in one Lambda instance's process
+// memory, so on Vercel it was reset by every cold start).
+//
+// The *cached* tier below only ever scans DEPLOYMENT_BLOCK -> "latest at the time this
+// last recomputed", and only recomputes once per HISTORICAL_CHECKPOINT_REVALIDATE_SECONDS
+// -- cheap regardless of how much history has built up, since it's shared across every
+// visitor in that window. getDecisions() (below) always adds a small, always-fresh "tail"
+// scan on top (checkpoint -> current latest) so nothing recent is ever missed.
+//
+// This replaced a version keyed on decisionCount() (recompute whenever the on-chain
+// decision count changed) -- correct, but meant literally every new decision anywhere
+// forced a full DEPLOYMENT_BLOCK rescan for the next visitor. Measured directly against
+// production: a cache-miss dashboard load took 60s once enough history had built up. This
+// version's worst case is one checkpoint recompute shared across a 20-minute window, plus
+// a tail scan that's normally a single getLogs call.
+const getHistoricalDecisions = unstable_cache(
+  async (): Promise<{ logs: DecisionRow[]; scannedTo: string }> => {
+    const latest = await withRetry(() => publicClient.getBlockNumber());
+    const logs = await scanDecisionLogs(DEPLOYMENT_BLOCK, latest);
+    return { logs, scannedTo: latest.toString() };
   },
-  ["arcos-decisions"],
-  { revalidate: LOG_SCAN_REVALIDATE_SECONDS },
+  ["arcos-decisions-historical"],
+  { revalidate: HISTORICAL_CHECKPOINT_REVALIDATE_SECONDS },
 );
 
 export async function getDecisions(): Promise<DecisionRow[]> {
-  return getDecisionsCached(await getFreshDecisionCount());
+  const [{ logs: historical, scannedTo }, latest] = await Promise.all([
+    getHistoricalDecisions(),
+    withRetry(() => publicClient.getBlockNumber()),
+  ]);
+  const scannedToBlock = BigInt(scannedTo);
+  const tail = latest > scannedToBlock ? await scanDecisionLogs(scannedToBlock + 1n, latest) : [];
+  return [...tail, ...historical].sort((a, b) => Number(b.decisionId) - Number(a.decisionId));
 }
 
 export interface PendingSpendRow {
@@ -248,66 +244,82 @@ export interface EscrowPayment {
   withdrawn: boolean;
 }
 
-// See getDecisions above for why this is unstable_cache-wrapped rather than the previous
-// in-memory Map, and keyed on decisionCount() rather than relying on revalidateTag. Every
-// escrow state change ARCOS's own flow makes (open, release, refund) always records a
-// decision alongside it (see ProcurementAgent/SupplierAgent/GovernanceAgent), so
-// decisionCount() is a reliable freshness signal here too, without a second on-chain read.
-// (The one gap: a third party calling withdraw()/refundByRecipient() directly on Escrow,
-// bypassing ARCOS's agents entirely, wouldn't bump decisionCount -- that's bounded by
-// LOG_SCAN_REVALIDATE_SECONDS instead, same as before.)
-const getEscrowPaymentsCached = unstable_cache(
-  async (_decisionCount: string): Promise<EscrowPayment[]> => {
+interface EscrowPaymentLog {
+  paymentId: string;
+  to: `0x${string}`;
+  amountUsdc: string;
+  refundTo: `0x${string}`;
+}
+
+const PAYMENT_CREATED_EVENT = {
+  type: "event",
+  name: "PaymentCreated",
+  inputs: [
+    { name: "paymentID", type: "uint256", indexed: true },
+    { name: "to", type: "address", indexed: true },
+    { name: "amount", type: "uint256", indexed: false },
+    { name: "releaseTimestamp", type: "uint256", indexed: false },
+    { name: "refundTo", type: "address", indexed: true },
+  ],
+} satisfies AbiEvent;
+
+async function scanEscrowPaymentLogs(fromBlock: bigint, toBlock: bigint): Promise<EscrowPaymentLog[]> {
+  if (fromBlock > toBlock) return [];
+  const logs = await getLogsRange({ address: addresses.escrow as `0x${string}`, event: PAYMENT_CREATED_EVENT }, fromBlock, toBlock);
+  return logs.map((log) => {
+    const decoded = decodeEventLog({ abi: EscrowAbi, data: log.data, topics: log.topics });
+    const args = decoded.args as unknown as { paymentID: bigint; to: `0x${string}`; amount: bigint; refundTo: `0x${string}` };
+    return { paymentId: args.paymentID.toString(), to: args.to, amountUsdc: formatUnits(args.amount, 6), refundTo: args.refundTo };
+  });
+}
+
+// Same two-tier cached-historical + always-fresh-tail split as getDecisions above, for the
+// same reason (a decisionCount()-keyed cache measured at up to 60s per request once enough
+// history had built up).
+//
+// Separately: withdrawn/refunded status is deliberately read fresh for *every* payment on
+// every request, never cached -- unlike a PaymentCreated event (immutable once logged), a
+// payment's status can change later (withdraw/refund) independent of any new event this
+// scan would pick up, so caching it would risk showing a stale "pending" on an already-
+// released payment. Reading all of them in parallel keeps that cheap even as it doesn't
+// come from cache, and lets viem's batch:{multicall:true} collapse them into few round trips.
+const getHistoricalEscrowPaymentLogs = unstable_cache(
+  async (): Promise<{ logs: EscrowPaymentLog[]; scannedTo: string }> => {
     const latest = await withRetry(() => publicClient.getBlockNumber());
-    const logs = await getLogsRange(
-      {
-        address: addresses.escrow as `0x${string}`,
-        event: {
-          type: "event",
-          name: "PaymentCreated",
-          inputs: [
-            { name: "paymentID", type: "uint256", indexed: true },
-            { name: "to", type: "address", indexed: true },
-            { name: "amount", type: "uint256", indexed: false },
-            { name: "releaseTimestamp", type: "uint256", indexed: false },
-            { name: "refundTo", type: "address", indexed: true },
-          ],
-        },
-      },
-      DEPLOYMENT_BLOCK,
-      latest,
-    );
+    const logs = await scanEscrowPaymentLogs(DEPLOYMENT_BLOCK, latest);
+    return { logs, scannedTo: latest.toString() };
+  },
+  ["arcos-escrow-payments-historical"],
+  { revalidate: HISTORICAL_CHECKPOINT_REVALIDATE_SECONDS },
+);
 
-    const payments: EscrowPayment[] = [];
-    for (const log of logs) {
-      const decoded = decodeEventLog({ abi: EscrowAbi, data: log.data, topics: log.topics });
-      const args = decoded.args as unknown as { paymentID: bigint; to: `0x${string}`; amount: bigint; refundTo: `0x${string}` };
+export async function getEscrowPayments(): Promise<EscrowPayment[]> {
+  const [{ logs: historical, scannedTo }, latest] = await Promise.all([
+    getHistoricalEscrowPaymentLogs(),
+    withRetry(() => publicClient.getBlockNumber()),
+  ]);
+  const scannedToBlock = BigInt(scannedTo);
+  const tail = latest > scannedToBlock ? await scanEscrowPaymentLogs(scannedToBlock + 1n, latest) : [];
+  const allLogs = [...historical, ...tail];
 
+  const payments = await Promise.all(
+    allLogs.map(async (logEntry): Promise<EscrowPayment> => {
       const onChainPayment = (await withRetry(() =>
         publicClient.readContract({
           address: addresses.escrow as `0x${string}`,
           abi: EscrowAbi,
           functionName: "payments",
-          args: [args.paymentID],
+          args: [BigInt(logEntry.paymentId)],
         }),
       )) as readonly [string, bigint, bigint, string, bigint, boolean];
 
-      payments.push({
-        paymentId: args.paymentID.toString(),
-        to: args.to,
-        amountUsdc: formatUnits(args.amount, 6),
-        refundTo: args.refundTo,
+      return {
+        ...logEntry,
         refunded: onChainPayment[5],
         withdrawn: onChainPayment[4] > 0n, // withdrawnAmount
-      });
-    }
+      };
+    }),
+  );
 
-    return payments.sort((a, b) => Number(b.paymentId) - Number(a.paymentId));
-  },
-  ["arcos-escrow-payments"],
-  { revalidate: LOG_SCAN_REVALIDATE_SECONDS },
-);
-
-export async function getEscrowPayments(): Promise<EscrowPayment[]> {
-  return getEscrowPaymentsCached(await getFreshDecisionCount());
+  return payments.sort((a, b) => Number(b.paymentId) - Number(a.paymentId));
 }
