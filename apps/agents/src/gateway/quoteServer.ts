@@ -23,7 +23,14 @@ export async function startQuoteServer(
   const app = express();
   app.use(express.json());
 
-  const gateway = createGatewayMiddleware({ sellerAddress, networks: "eip155:5042002" });
+  // v3+ of the SDK defaults facilitatorUrl to Circle's mainnet Gateway API — Arc Testnet
+  // isn't listed there, so without this override every request 503s with "No payment
+  // networks available" before it ever gets to issuing a 402.
+  const gateway = createGatewayMiddleware({
+    sellerAddress,
+    networks: "eip155:5042002",
+    facilitatorUrl: "https://gateway-api-testnet.circle.com",
+  });
 
   app.post("/quote", gateway.require(feeUsdc), async (req, res) => {
     const { itemDescription, amountAtomic } = req.body as { itemDescription: string; amountAtomic: string };

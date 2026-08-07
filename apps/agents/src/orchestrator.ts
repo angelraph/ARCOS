@@ -110,9 +110,11 @@ export async function runFlow(
       });
     } catch (err) {
       // Gateway is a live third-party settlement network the flow doesn't control — a
-      // rejected/unavailable payment degrades to the unpaid quote rather than failing the
-      // whole run. See docs/circle-feedback.md for a specific reproduction of one such
-      // rejection (authorization_validity_too_short) hit against Arc Testnet during this build.
+      // rejected/unavailable payment (insufficient Gateway balance, a facilitator hiccup,
+      // etc.) degrades to the unpaid quote rather than failing the whole run. Settlement
+      // itself is confirmed working end to end on Arc Testnet as of x402-batching@3.2.0 —
+      // see docs/circle-feedback.md for two SDK/facilitator-config bugs found and fixed
+      // along the way.
       const message = err instanceof Error ? err.message : String(err);
       quote = await supplierAgent.quote("Fresh produce restock", procurementAtomic);
       onStep({

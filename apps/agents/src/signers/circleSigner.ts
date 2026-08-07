@@ -36,7 +36,9 @@ export function createCircleSigner(walletId: string, walletAddress: `0x${string}
           return { txHash: transaction.txHash as `0x${string}` };
         }
         if (transaction?.state === "FAILED") {
-          throw new Error(`Circle transaction ${transactionId} failed`);
+          const reason = transaction.errorReason ?? "unknown reason";
+          const detail = transaction.errorDetails ? ` — ${transaction.errorDetails}` : "";
+          throw new Error(`Circle transaction ${transactionId} failed: ${reason}${detail}`);
         }
         await new Promise((r) => setTimeout(r, 2000));
       }

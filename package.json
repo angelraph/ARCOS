@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "@circle-fin/developer-controlled-wallets": "^4.6.0",
-    "@circle-fin/x402-batching": "^2.1.0",
+    "@circle-fin/x402-batching": "^3.2.0",
     "dotenv": "^16.4.5"
   }
 }
