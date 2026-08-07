@@ -1,4 +1,4 @@
-import { parseUnits, type Hex } from "viem";
+import { parseUnits, formatUnits, type Hex } from "viem";
 import { TreasuryAgent } from "./agents/treasuryAgent";
 import { ProcurementAgent } from "./agents/procurementAgent";
 import { SupplierAgent } from "./agents/supplierAgent";
@@ -63,7 +63,10 @@ export async function runFlow(
   const isCustomRecipient = recipient.toLowerCase() !== signers.supplier.address.toLowerCase();
 
   const paymentAtomic = parseUnits(paymentUsdc, 6);
-  const procurementAtomic = parseUnits(procurementUsdc, 6);
+  // let, not const: proposeSpend below may clamp this down to what the (shared, public-demo)
+  // Procurement bucket actually has available -- every later step has to move that same
+  // real amount, not the originally requested one.
+  let procurementAtomic = parseUnits(procurementUsdc, 6);
 
   const payment = await treasuryAgent.receivePayment(signers.customer, paymentAtomic);
   onStep({ step: 1, totalSteps: TOTAL, label: `Customer paid $${paymentUsdc} USDC. Treasury Agent allocated it across policy buckets.`, txHash: payment.txHash });
@@ -74,13 +77,24 @@ export async function runFlow(
   }
 
   const proposal = await procurementAgent.proposeSpend(procurementAtomic, "Restocking low inventory item");
+  // The Procurement bucket is a shared balance across every run of this public demo, so
+  // proposeSpend may have clamped the request down to whatever was actually available --
+  // every step after this one has to move the same amount that was actually proposed
+  // on-chain (procurementAtomic below is now stale if a clamp happened), or a later step
+  // (approve/pay in openEscrow) would try to move more than the agent's wallet received.
+  procurementAtomic = proposal.amountAtomic;
+  procurementUsdc = formatUnits(proposal.amountAtomic, 6);
   const alreadyExecuted = await isSpendExecuted(config.treasuryPolicyAddress, proposal.spendId);
+
+  const clampNote = proposal.wasClamped
+    ? ` (the Procurement bucket is a shared demo balance and didn't have the full amount available, so this was reduced to what it could actually cover)`
+    : "";
 
   if (!alreadyExecuted) {
     onStep({
       step: 2,
       totalSteps: TOTAL,
-      label: `Procurement Agent proposed a $${procurementUsdc} USDC spend. It's above threshold, so it's paused for governance.`,
+      label: `Procurement Agent proposed a $${procurementUsdc} USDC spend${clampNote}. It's above threshold, so it's paused for governance.`,
       txHash: proposal.txHash,
     });
     const approval = await governanceAgent.approveSpend(proposal.spendId, procurementAtomic);
@@ -89,7 +103,7 @@ export async function runFlow(
     onStep({
       step: 2,
       totalSteps: TOTAL,
-      label: `Procurement Agent proposed and auto-executed a $${procurementUsdc} USDC spend (under threshold).`,
+      label: `Procurement Agent proposed and auto-executed a $${procurementUsdc} USDC spend (under threshold)${clampNote}.`,
       txHash: proposal.txHash,
     });
     onStep({ step: 3, totalSteps: TOTAL, label: "No governance approval needed (under threshold)." });
