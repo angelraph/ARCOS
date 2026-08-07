@@ -1,6 +1,7 @@
 export * from "./addresses";
 export * from "./circleClient";
 export * from "./abi";
+export * from "./supabaseClient";
 
 // Arc Testnet's commerce USDC is an ERC-20 token (6 decimals) at this fixed address —
 // distinct from the native 18-decimal gas token used only to pay transaction fees.

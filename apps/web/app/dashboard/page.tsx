@@ -34,8 +34,7 @@ async function GovernancePanelAsync({ promise }: { promise: Promise<PendingSpend
 }
 
 async function DecisionLedgerPanelAsync({ promise }: { promise: Promise<DecisionRow[]> }) {
-  const decisions = await promise;
-  const rationales = getRationales();
+  const [decisions, rationales] = await Promise.all([promise, getRationales()]);
   return <DecisionLedgerPanel decisions={decisions} rationales={rationales} />;
 }
 

@@ -1,16 +1,5 @@
-import { readFileSync, existsSync } from "node:fs";
-import path from "node:path";
-import os from "node:os";
 import { keccak256, stringToBytes } from "viem";
-
-// Shared local store written by apps/agents/src/ledger.ts — stands in for Supabase until
-// that's wired up. Reading it directly (rather than duplicating storage) keeps rationale
-// text and on-chain hash in one place during this build phase.
-// Must match the path ledger.ts writes to — Vercel's filesystem is read-only outside
-// os.tmpdir(), and only persists for the lifetime of a given serverless instance.
-const rationaleStorePath = process.env.VERCEL
-  ? path.join(os.tmpdir(), "arcos-rationales.json")
-  : path.resolve(process.cwd(), "../agents/data/rationales.json");
+import { createSupabaseServiceClient } from "@arcos/shared";
 
 export interface RationaleEntry {
   agentId: string;
@@ -22,9 +11,27 @@ export interface RationaleEntry {
   timestamp: string;
 }
 
-export function getRationales(): RationaleEntry[] {
-  if (!existsSync(rationaleStorePath)) return [];
-  return JSON.parse(readFileSync(rationaleStorePath, "utf-8"));
+// Written by apps/agents/src/ledger.ts. Supabase (not a local file) because the
+// orchestrator and this dashboard read run as separate Vercel serverless invocations that
+// don't share a filesystem — a local file, even under os.tmpdir(), was invisible across
+// requests in production, so rationale text silently never appeared on the live dashboard.
+export async function getRationales(): Promise<RationaleEntry[]> {
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("rationales")
+    .select("agent_id, action_type, rationale, rationale_hash, tx_ref, ledger_tx_hash, created_at");
+
+  if (error) throw new Error(`Failed to load rationales from Supabase: ${error.message}`);
+
+  return (data ?? []).map((row) => ({
+    agentId: row.agent_id,
+    actionType: row.action_type,
+    rationale: row.rationale,
+    rationaleHash: row.rationale_hash as `0x${string}`,
+    txRef: row.tx_ref as `0x${string}`,
+    ledgerTxHash: row.ledger_tx_hash as `0x${string}`,
+    timestamp: row.created_at,
+  }));
 }
 
 /** Recomputes the rationale hash client-side (well, here server-side at render time) and

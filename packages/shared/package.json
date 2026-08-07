@@ -7,6 +7,7 @@
   "types": "index.ts",
   "dependencies": {
     "viem": "^2.21.0",
-    "@circle-fin/developer-controlled-wallets": "^4.6.0"
+    "@circle-fin/developer-controlled-wallets": "^4.6.0",
+    "@supabase/supabase-js": "^2.111.0"
   }
 }

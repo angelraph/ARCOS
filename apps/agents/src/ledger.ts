@@ -1,29 +1,27 @@
 import { keccak256, stringToBytes, stringToHex, type Hex } from "viem";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
-import os from "node:os";
-import { ActionType } from "@arcos/shared";
+import { ActionType, createSupabaseServiceClient } from "@arcos/shared";
 import type { ContractSigner } from "./signers/types";
 
-// Local rationale store, standing in for Supabase until that's wired up (Phase 3). Same
-// shape either way: the full rationale text lives off-chain; only its keccak256 hash is
-// pinned on DecisionLedger. The dashboard later recomputes this hash client-side and
-// checks it against the on-chain value.
-// Vercel's deployed filesystem is read-only outside os.tmpdir() — use that there.
-const rationaleStorePath = process.env.VERCEL
-  ? path.join(os.tmpdir(), "arcos-rationales.json")
-  : path.resolve(process.cwd(), "data/rationales.json");
-
-function loadStore(): unknown[] {
-  if (!existsSync(rationaleStorePath)) return [];
-  return JSON.parse(readFileSync(rationaleStorePath, "utf-8"));
-}
-
-function saveRationale(entry: Record<string, unknown>) {
-  mkdirSync(path.dirname(rationaleStorePath), { recursive: true });
-  const store = loadStore();
-  store.push(entry);
-  writeFileSync(rationaleStorePath, JSON.stringify(store, null, 2));
+// The full rationale text lives off-chain in Supabase; only its keccak256 hash is pinned
+// on DecisionLedger. The dashboard recomputes this hash client-side and checks it against
+// the on-chain value. This used to be a local JSON file, but the orchestrator and the
+// dashboard read run as separate Vercel serverless invocations that don't share a
+// filesystem, so a local file (even under os.tmpdir()) was invisible across requests in
+// production — Supabase is the real, durable, shared store this always needed to be.
+async function saveRationale(entry: {
+  agent_id: string;
+  action_type: string;
+  rationale: string;
+  rationale_hash: string;
+  tx_ref: string;
+  ledger_tx_hash: string;
+}) {
+  const supabase = createSupabaseServiceClient();
+  // upsert, not insert: two runs with identical inputs produce byte-identical rationale
+  // text (the fallback templates have no randomness/timestamp), so rationale_hash — the
+  // primary key — can collide. The row content would be identical anyway in that case.
+  const { error } = await supabase.from("rationales").upsert(entry, { onConflict: "rationale_hash" });
+  if (error) throw new Error(`Failed to save rationale to Supabase: ${error.message}`);
 }
 
 export type AgentName = "TREASURY_AGENT" | "PROCUREMENT_AGENT" | "SUPPLIER_AGENT";
@@ -53,14 +51,13 @@ export async function recordDecision(params: {
     abiParameters: [agentIdBytes32, params.actionType, rationaleHash, params.txRef],
   });
 
-  saveRationale({
-    agentId: params.agentId,
-    actionType: ActionType[params.actionType],
+  await saveRationale({
+    agent_id: params.agentId,
+    action_type: ActionType[params.actionType],
     rationale: params.rationale,
-    rationaleHash,
-    txRef: params.txRef,
-    ledgerTxHash: txHash,
-    timestamp: new Date().toISOString(),
+    rationale_hash: rationaleHash,
+    tx_ref: params.txRef,
+    ledger_tx_hash: txHash,
   });
 
   return { txHash, rationaleHash };
