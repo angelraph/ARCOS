@@ -15,6 +15,7 @@
     "create-wallets": "tsx scripts/create-wallets.ts",
     "setup-gateway": "tsx scripts/setup-gateway.ts",
     "bridge-treasury-demo": "tsx scripts/bridge-treasury-demo.ts",
+    "check-balances": "tsx scripts/check-balances.ts",
     "build": "npm run build --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present"
   },
