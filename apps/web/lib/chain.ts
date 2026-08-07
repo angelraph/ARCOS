@@ -9,12 +9,10 @@ import { TreasuryPolicyAbi, EscrowAbi, DecisionLedgerAbi, addresses, ActionType,
 // without every visitor triggering their own round of reads.
 const CACHE_SECONDS = 15;
 
-// The historical event scans below (getDecisions/getEscrowPayments) are expensive — see
-// LOG_SCAN_REVALIDATE_SECONDS — so on-demand invalidation is the primary freshness
-// mechanism: apps/web/app/api/run/route.ts calls revalidateTag with these after a run
-// completes. This is just the time-based safety net for cache entries nothing invalidated.
-export const DECISIONS_TAG = "arcos-decisions";
-export const ESCROW_PAYMENTS_TAG = "arcos-escrow-payments";
+// The historical event scans below (getDecisions/getEscrowPayments) are expensive, so they
+// stay cached for a long time -- freshness comes from keying the cache on decisionCount()
+// (see getFreshDecisionCount below), not from this window. This is only the time-based
+// safety net for the rare case decisionCount() itself can't be read.
 const LOG_SCAN_REVALIDATE_SECONDS = 3600;
 
 // Arc's own primary RPC (rpc.testnet.arc.network) rate-limits after just 3-5 sequential
@@ -48,6 +46,28 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 5, baseDelayMs = 40
     }
   }
   throw lastError;
+}
+
+// Cache-busting key for the two expensive log scans below, instead of relying on
+// revalidateTag. Tried revalidateTag(tag, { expire: 0 }) from /api/run first -- verified
+// directly against production (decisionCount() on-chain vs. the dashboard's reported
+// count) that it does NOT invalidate an unstable_cache-tagged entry on this Next.js
+// version, even though the call itself doesn't throw. Rather than depend on that, key the
+// cache on this cheap, always-fresh read of decisionCount() (a single eth_call, not a log
+// scan) -- every state-changing action in ARCOS's own flow (payment, spend, escrow open,
+// release, refund) always records a decision alongside it, so a changed count reliably
+// means changed data, and an unchanged count means the expensive scan below can safely be
+// skipped. This makes staleness structurally impossible rather than dependent on any
+// particular revalidation call actually working.
+async function getFreshDecisionCount(): Promise<string> {
+  const count = await withRetry(() =>
+    publicClient.readContract({
+      address: addresses.decisionLedger as `0x${string}`,
+      abi: DecisionLedgerAbi,
+      functionName: "decisionCount",
+    }),
+  );
+  return (count as bigint).toString();
 }
 
 // Arc Testnet's eth_getLogs caps ranges at 10,000 blocks.
@@ -113,9 +133,10 @@ function bytes32ToAsciiLabel(hex: `0x${string}`): string {
 // of rescanning the full history (hundreds of thousands of blocks, in 10k-block chunks)
 // from DEPLOYMENT_BLOCK. unstable_cache's storage is shared and durable across
 // invocations, so once any request warms this key, every other request (any instance)
-// reads it instantly until the tag is invalidated or LOG_SCAN_REVALIDATE_SECONDS elapses.
-export const getDecisions = unstable_cache(
-  async (): Promise<DecisionRow[]> => {
+// reads it instantly until decisionCount() changes (see getFreshDecisionCount) or
+// LOG_SCAN_REVALIDATE_SECONDS elapses.
+const getDecisionsCached = unstable_cache(
+  async (_decisionCount: string): Promise<DecisionRow[]> => {
     const latest = await withRetry(() => publicClient.getBlockNumber());
     const logs = await getLogsRange(
       {
@@ -164,8 +185,12 @@ export const getDecisions = unstable_cache(
       .sort((a, b) => Number(b.decisionId) - Number(a.decisionId));
   },
   ["arcos-decisions"],
-  { revalidate: LOG_SCAN_REVALIDATE_SECONDS, tags: [DECISIONS_TAG] },
+  { revalidate: LOG_SCAN_REVALIDATE_SECONDS },
 );
+
+export async function getDecisions(): Promise<DecisionRow[]> {
+  return getDecisionsCached(await getFreshDecisionCount());
+}
 
 export interface PendingSpendRow {
   spendId: string;
@@ -224,9 +249,15 @@ export interface EscrowPayment {
 }
 
 // See getDecisions above for why this is unstable_cache-wrapped rather than the previous
-// in-memory Map.
-export const getEscrowPayments = unstable_cache(
-  async (): Promise<EscrowPayment[]> => {
+// in-memory Map, and keyed on decisionCount() rather than relying on revalidateTag. Every
+// escrow state change ARCOS's own flow makes (open, release, refund) always records a
+// decision alongside it (see ProcurementAgent/SupplierAgent/GovernanceAgent), so
+// decisionCount() is a reliable freshness signal here too, without a second on-chain read.
+// (The one gap: a third party calling withdraw()/refundByRecipient() directly on Escrow,
+// bypassing ARCOS's agents entirely, wouldn't bump decisionCount -- that's bounded by
+// LOG_SCAN_REVALIDATE_SECONDS instead, same as before.)
+const getEscrowPaymentsCached = unstable_cache(
+  async (_decisionCount: string): Promise<EscrowPayment[]> => {
     const latest = await withRetry(() => publicClient.getBlockNumber());
     const logs = await getLogsRange(
       {
@@ -274,5 +305,9 @@ export const getEscrowPayments = unstable_cache(
     return payments.sort((a, b) => Number(b.paymentId) - Number(a.paymentId));
   },
   ["arcos-escrow-payments"],
-  { revalidate: LOG_SCAN_REVALIDATE_SECONDS, tags: [ESCROW_PAYMENTS_TAG] },
+  { revalidate: LOG_SCAN_REVALIDATE_SECONDS },
 );
+
+export async function getEscrowPayments(): Promise<EscrowPayment[]> {
+  return getEscrowPaymentsCached(await getFreshDecisionCount());
+}

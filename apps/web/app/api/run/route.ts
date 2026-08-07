@@ -1,10 +1,8 @@
 import "@/lib/loadServerEnv";
 import { NextRequest } from "next/server";
-import { revalidateTag } from "next/cache";
 import { runFlow } from "@arcos/agents/orchestrator";
 import { createSigners } from "@arcos/agents/signers";
 import { addresses } from "@arcos/shared";
-import { DECISIONS_TAG, ESCROW_PAYMENTS_TAG } from "@/lib/chain";
 
 export const runtime = "nodejs";
 
@@ -59,15 +57,13 @@ export async function GET(req: NextRequest) {
           recipientAddress,
         );
 
-        // New decisions/escrow payments now exist on-chain — invalidate the dashboard's
-        // durable log-scan cache so the very next visit reflects this run instead of
-        // waiting up to LOG_SCAN_REVALIDATE_SECONDS for the time-based safety net.
-        // { expire: 0 } forces an immediate hard revalidation rather than Next 16's default
-        // stale-while-revalidate profile behavior — the next dashboard read must see fresh
-        // data, not a serve-stale-then-refresh-in-background window.
-        revalidateTag(DECISIONS_TAG, { expire: 0 });
-        revalidateTag(ESCROW_PAYMENTS_TAG, { expire: 0 });
-
+        // No manual cache invalidation needed here: apps/web/lib/chain.ts keys
+        // getDecisions()/getEscrowPayments() on decisionCount() (a cheap, always-fresh
+        // on-chain read), and this run just changed that count on-chain. The very next
+        // dashboard read picks up a new cache key automatically -- tried
+        // revalidateTag(tag, { expire: 0 }) here first, but verified directly against
+        // production that it doesn't actually invalidate an unstable_cache-tagged entry
+        // on this Next.js version, so correctness no longer depends on it.
         send({ type: "done" });
       } catch (err) {
         send({ type: "error", message: err instanceof Error ? err.message : String(err) });
