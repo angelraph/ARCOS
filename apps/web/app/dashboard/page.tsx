@@ -3,16 +3,19 @@ import { BucketsPanel } from "@/components/BucketsPanel";
 import { EscrowPanel } from "@/components/EscrowPanel";
 import { GovernancePanel } from "@/components/GovernancePanel";
 import { DecisionLedgerPanel } from "@/components/DecisionLedgerPanel";
+import { AgentWalletsPanel } from "@/components/AgentWalletsPanel";
 import { PanelSkeleton } from "@/components/PanelSkeleton";
 import {
   getBuckets,
   getDecisions,
   getEscrowPayments,
   getPendingSpends,
+  getAgentWallets,
   type BucketState,
   type DecisionRow,
   type EscrowPayment,
   type PendingSpendRow,
+  type AgentWallet,
 } from "@/lib/chain";
 import { getRationales } from "@/lib/rationales";
 import { addresses } from "@arcos/shared";
@@ -38,6 +41,10 @@ async function DecisionLedgerPanelAsync({ promise }: { promise: Promise<Decision
   return <DecisionLedgerPanel decisions={decisions} rationales={rationales} />;
 }
 
+async function AgentWalletsPanelAsync({ promise }: { promise: Promise<AgentWallet[]> }) {
+  return <AgentWalletsPanel wallets={await promise} />;
+}
+
 export default function DashboardPage() {
   // Sequential, not Promise.all — Arc Testnet's default RPC endpoint rate-limits under
   // concurrent load (observed directly), even with per-call multicall batching. Each promise
@@ -48,6 +55,7 @@ export default function DashboardPage() {
   const decisionsPromise = bucketsPromise.then(() => getDecisions());
   const paymentsPromise = decisionsPromise.then(() => getEscrowPayments());
   const pendingPromise = paymentsPromise.then(() => getPendingSpends());
+  const walletsPromise = pendingPromise.then(() => getAgentWallets());
 
   return (
     <main
@@ -81,6 +89,10 @@ export default function DashboardPage() {
 
       <Suspense fallback={<PanelSkeleton title="Decision Ledger" rows={4} />}>
         <DecisionLedgerPanelAsync promise={decisionsPromise} />
+      </Suspense>
+
+      <Suspense fallback={<PanelSkeleton title="Agent Wallets" rows={5} />}>
+        <AgentWalletsPanelAsync promise={walletsPromise} />
       </Suspense>
     </main>
   );

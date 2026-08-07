@@ -1,8 +1,8 @@
 import "./loadServerEnv"; // must run before @arcos/shared evaluates process.env-derived addresses
-import { createPublicClient, http, decodeEventLog, formatUnits, type AbiEvent, type Log } from "viem";
+import { createPublicClient, http, decodeEventLog, formatUnits, formatEther, erc20Abi, type AbiEvent, type Log } from "viem";
 import { arcTestnet } from "viem/chains";
 import { unstable_cache } from "next/cache";
-import { TreasuryPolicyAbi, EscrowAbi, DecisionLedgerAbi, addresses, ActionType, DEPLOYMENT_BLOCK } from "@arcos/shared";
+import { TreasuryPolicyAbi, EscrowAbi, DecisionLedgerAbi, addresses, ActionType, DEPLOYMENT_BLOCK, ARC_TESTNET_USDC } from "@arcos/shared";
 
 // Current chain state (bucket balances, pending spends) changes only when a run happens,
 // but a stale dashboard is confusing right after one — a short window keeps it fresh
@@ -91,6 +91,53 @@ export const getBuckets = unstable_cache(
     return result;
   },
   ["arcos-buckets"],
+  { revalidate: CACHE_SECONDS },
+);
+
+export interface AgentWallet {
+  role: string;
+  address: `0x${string}` | null;
+  nativeBalance: string;
+  usdcBalance: string;
+  low: boolean;
+}
+
+// Only Customer is a one-way drain: every /run click pulls its "customer payment" out of
+// this one shared wallet and nothing in the flow ever pays it back (Treasury/Procurement/
+// Supplier/Governance mostly circulate the same funds among themselves). It's the one that
+// actually needs periodic top-ups from the Circle faucet -- this threshold just flags it
+// on the dashboard so that's visible before a visitor's run fails outright at step 1.
+const LOW_USDC_THRESHOLD = 10;
+const AGENT_WALLET_ROLES = ["TREASURY", "PROCUREMENT", "SUPPLIER", "GOVERNANCE", "CUSTOMER"] as const;
+
+export const getAgentWallets = unstable_cache(
+  async (): Promise<AgentWallet[]> => {
+    return Promise.all(
+      AGENT_WALLET_ROLES.map(async (role): Promise<AgentWallet> => {
+        const address = process.env[`CIRCLE_WALLET_ADDRESS_${role}`] as `0x${string}` | undefined;
+        if (!address) {
+          return { role, address: null, nativeBalance: "0", usdcBalance: "0", low: false };
+        }
+
+        const [nativeBalance, usdcBalance] = await Promise.all([
+          withRetry(() => publicClient.getBalance({ address })),
+          withRetry(() =>
+            publicClient.readContract({ address: ARC_TESTNET_USDC as `0x${string}`, abi: erc20Abi, functionName: "balanceOf", args: [address] }),
+          ) as Promise<bigint>,
+        ]);
+        const usdcFormatted = formatUnits(usdcBalance, 6);
+
+        return {
+          role,
+          address,
+          nativeBalance: formatEther(nativeBalance),
+          usdcBalance: usdcFormatted,
+          low: parseFloat(usdcFormatted) < LOW_USDC_THRESHOLD,
+        };
+      }),
+    );
+  },
+  ["arcos-agent-wallets"],
   { revalidate: CACHE_SECONDS },
 );
 
