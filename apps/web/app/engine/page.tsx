@@ -15,7 +15,7 @@ export default function EnginePage() {
           transaction, not a mock.
         </p>
 
-        <div className="mt-8 overflow-x-auto rounded-xl border border-border bg-surface p-2">
+        <div className="card mt-8 overflow-x-auto p-2">
           <Image src="/architecture.png" alt="ARCOS architecture diagram" width={1800} height={1000} className="w-full h-auto" />
         </div>
 
