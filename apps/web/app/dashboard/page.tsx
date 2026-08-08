@@ -58,10 +58,7 @@ export default function DashboardPage() {
   const walletsPromise = pendingPromise.then(() => getAgentWallets());
 
   return (
-    <main
-      className="flex-1 px-4 sm:px-6 py-6 space-y-6 max-w-7xl w-full mx-auto"
-      style={{ "--gradient-angle": "160deg" } as React.CSSProperties}
-    >
+    <main className="flex-1 px-4 sm:px-6 py-6 space-y-6 max-w-7xl w-full mx-auto">
       <div>
         <h1 className="text-xl font-semibold">Live dashboard</h1>
         <p className="mt-1 text-sm text-muted">

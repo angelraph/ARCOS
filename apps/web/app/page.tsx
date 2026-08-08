@@ -3,7 +3,7 @@ import Link from "next/link";
 
 export default function LandingPage() {
   return (
-    <main className="flex-1" style={{ "--gradient-angle": "125deg" } as React.CSSProperties}>
+    <main className="flex-1">
       {/* Hero */}
       <section className="mx-auto max-w-5xl px-4 sm:px-6 pt-12 sm:pt-16 pb-10 sm:pb-12 text-center">
         <Image src="/logo.png" alt="ARCOS" width={640} height={160} className="mx-auto h-20 sm:h-28 w-auto" priority />

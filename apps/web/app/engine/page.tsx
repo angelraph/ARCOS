@@ -6,7 +6,7 @@ import { ExplorerLink } from "@/components/ExplorerLink";
 
 export default function EnginePage() {
   return (
-    <main className="flex-1 px-4 sm:px-6 py-10 sm:py-12" style={{ "--gradient-angle": "200deg" } as React.CSSProperties}>
+    <main className="flex-1 px-4 sm:px-6 py-10 sm:py-12">
       <div className="mx-auto max-w-4xl">
         <h1 className="text-xl sm:text-2xl font-semibold">How ARCOS actually works</h1>
         <p className="mt-3 text-sm text-muted">

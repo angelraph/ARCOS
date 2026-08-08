@@ -1,18 +1,32 @@
 @import "tailwindcss";
 
 :root {
-  --background: #05070d;
-  --surface: #0d121f;
-  --surface-raised: #131a2b;
-  --border: #22304a;
-  --foreground: #e7ecf6;
-  --muted: #8b97b0;
-  --accent: #35c7f0;
-  --accent-2: #3b6dfa;
-  --success: #34d399;
-  --warning: #fbbf24;
-  --danger: #f87171;
-  --violet: #7c3aed;
+  /* Warm, near-black fallback (shows briefly before the gradient paints, and is what
+     .card/.surface-raised colors are mixed from) — keeps the whole palette in one
+     family instead of falling back to cold black. */
+  --background: #170a10;
+
+  /* .card: translucent "glass" — the vibrant gradient shows through, blurred, so cards
+     read as floating panels rather than opaque boxes stacked on top of the artwork. */
+  --surface: rgba(26, 13, 18, 0.72);
+  /* Nested rows inside a card (ledger entries, escrow rows, wallet rows) are solid, not
+     translucent — stacking two alpha layers over a moving gradient gets muddy fast, so
+     only the outer card boundary does the glass effect. */
+  --surface-raised: #2b1620;
+  --border: rgba(255, 238, 227, 0.14);
+
+  --foreground: #fbf3ec;
+  --muted: #e7cfc9;
+
+  /* Cool accents against a warm background — the classic teal/orange complementary
+     pairing, chosen so buttons and links actually pop instead of blending into the
+     sunset instead of sitting on it. */
+  --accent: #45e0c8;
+  --accent-2: #57b8ff;
+
+  --success: #3fdda0;
+  --warning: #ffc24b;
+  --danger: #ff6b6b;
 }
 
 @theme inline {
@@ -35,21 +49,40 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  /* Applies everywhere, including inside cards (harmless there — card text already has
+     strong contrast on its own). What it's actually for: every heading, intro paragraph,
+     nav link, and footer line that sits directly on the gradient rather than inside a
+     card. A single shadow can't assume where on the gradient a given element will land
+     (the backdrop is viewport-fixed, so the same heading passes over dark wine near the
+     top of the screen and pale gold near the bottom as the page scrolls) — three stacked
+     shadows at increasing blur build a soft dark halo behind the glyphs that holds up
+     against both ends of the gradient, not just whichever stop it was designed against. */
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.55),
+    0 2px 10px rgba(0, 0, 0, 0.45),
+    0 6px 28px rgba(0, 0, 0, 0.35);
 }
 
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 0.75rem;
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  box-shadow:
+    0 12px 32px -12px rgba(20, 5, 10, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .mono {
   font-family: var(--font-mono), ui-monospace, monospace;
 }
 
-/* Shared page-background gradient — three brand colors (teal, blue, violet) blended
-   diagonally, with a per-page angle/position so each page reads as visually distinct
-   while staying one coherent family. Bold enough to actually see, not a faint tint. */
+/* Site-wide sunset backdrop. position:fixed means it's pinned to the viewport, not the
+   document — every page always shows the same dark-wine-to-warm-gold sweep from the top
+   of the screen to the bottom, regardless of scroll position or page length, so it reads
+   as one consistent identity rather than a background that happens to look different
+   depending on how far down a given page you are. */
 .page-gradient {
   position: relative;
   background: var(--background);
@@ -63,11 +96,6 @@ body {
   z-index: -1;
   pointer-events: none;
   background:
-    linear-gradient(
-      var(--gradient-angle, 135deg),
-      var(--background) 0%,
-      color-mix(in srgb, var(--accent-2) 30%, var(--background)) 42%,
-      color-mix(in srgb, var(--violet, #7c3aed) 26%, var(--background)) 70%,
-      color-mix(in srgb, var(--accent) 30%, var(--background)) 100%
-    );
+    radial-gradient(ellipse 120% 70% at 50% 0%, rgba(255, 255, 255, 0.1), transparent 60%),
+    linear-gradient(to bottom, #6a1841 0%, #a62f4b 35%, #d85a35 65%, #f39a36 85%, #f8b54a 100%);
 }
