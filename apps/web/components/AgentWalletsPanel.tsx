@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AgentWallet } from "@/lib/chain";
 
 const FAUCET_URL = "https://faucet.circle.com/?chain=ARC&token=USDC";
@@ -13,36 +13,82 @@ const ROLE_LABELS: Record<string, string> = {
   CUSTOMER: "Customer",
 };
 
-function FundButton({ address }: { address: `0x${string}` }) {
+function FundModal({ wallet, onClose }: { wallet: AgentWallet; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
 
-  async function handleClick() {
-    // Circle's faucet form has no way to pre-fill the address via URL, so this is the
-    // closest thing to one click: copy the address, then open the faucet in a new tab
-    // ready to paste into.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function handleCopy() {
+    if (!wallet.address) return;
     try {
-      await navigator.clipboard.writeText(address);
+      await navigator.clipboard.writeText(wallet.address);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Clipboard permission denied or unavailable — the faucet still opens either way,
-      // the address is right there in the row to copy by hand.
+      // Clipboard permission denied or unavailable — the address is still right there,
+      // selectable, to copy by hand.
     }
-    window.open(FAUCET_URL, "_blank", "noreferrer");
   }
 
   return (
-    <button
-      onClick={handleClick}
-      className="rounded-md border border-border bg-surface-raised px-3 py-1.5 text-xs font-medium hover:bg-surface-raised/70 whitespace-nowrap"
-      title="Copies the address, then opens Circle's testnet faucet in a new tab"
-    >
-      {copied ? "Copied ✓ — paste in faucet" : "Copy address & open faucet"}
-    </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4" onClick={onClose}>
+      <div className="card w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-base font-semibold">Fund the {ROLE_LABELS[wallet.role] ?? wallet.role} wallet</h3>
+            <p className="mt-1 text-xs text-muted">
+              Copy this address, then continue to Circle's testnet faucet and paste it into the &ldquo;Send to&rdquo; field.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="shrink-0 rounded-md p-1 text-muted hover:bg-surface-raised hover:text-text"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-border bg-surface-raised px-3 py-3">
+          <code className="mono flex-1 select-all break-all text-sm">{wallet.address}</code>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between text-xs text-muted">
+          <span>
+            Currently ${parseFloat(wallet.usdcBalance).toFixed(2)} USDC · {parseFloat(wallet.nativeBalance).toFixed(2)} native gas
+          </span>
+          {wallet.low && <span className="font-medium text-warning">Below $10 — could use a top-up</span>}
+        </div>
+
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+          <button
+            onClick={handleCopy}
+            className="flex-1 rounded-lg border border-border bg-surface-raised px-4 py-2.5 text-sm font-medium hover:bg-surface-raised/70"
+          >
+            {copied ? "Copied ✓" : "Copy address"}
+          </button>
+          <a
+            href={FAUCET_URL}
+            target="_blank"
+            rel="noreferrer"
+            onClick={onClose}
+            className="flex-1 rounded-lg bg-accent-2 px-4 py-2.5 text-center text-sm font-medium text-white hover:opacity-90"
+          >
+            Continue to Circle Faucet →
+          </a>
+        </div>
+      </div>
+    </div>
   );
 }
 
 export function AgentWalletsPanel({ wallets }: { wallets: AgentWallet[] }) {
+  const [selected, setSelected] = useState<AgentWallet | null>(null);
+
   return (
     <section className="card p-5">
       <h2 className="text-sm font-medium text-muted uppercase tracking-wide">Agent Wallets</h2>
@@ -84,11 +130,20 @@ export function AgentWalletsPanel({ wallets }: { wallets: AgentWallet[] }) {
                 <div className="tabular-nums text-sm text-muted">{parseFloat(w.nativeBalance).toFixed(2)}</div>
                 <div className="text-[10px] text-muted">gas</div>
               </div>
-              {w.address && <FundButton address={w.address} />}
+              {w.address && (
+                <button
+                  onClick={() => setSelected(w)}
+                  className="rounded-md border border-border bg-surface-raised px-3 py-1.5 text-xs font-medium hover:bg-surface-raised/70 whitespace-nowrap"
+                >
+                  Fund this wallet
+                </button>
+              )}
             </div>
           </div>
         ))}
       </div>
+
+      {selected && <FundModal wallet={selected} onClose={() => setSelected(null)} />}
     </section>
   );
 }
