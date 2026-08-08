@@ -108,9 +108,11 @@ export default function LandingPage() {
         </p>
       </section>
 
-      <footer className="border-t border-border px-4 sm:px-6 py-6 text-center text-xs text-muted">
-        Built on Arc Testnet for the Stablecoins Commerce Stack Challenge, Track 4: Best Agentic Economy Experience.
-        Educational and testnet demo only.
+      <footer className="mx-auto mb-8 max-w-3xl px-4 sm:px-6">
+        <p className="card px-5 py-4 text-center text-xs text-muted">
+          Built on Arc Testnet for the Stablecoins Commerce Stack Challenge, Track 4: Best Agentic Economy Experience.
+          Educational and testnet demo only.
+        </p>
       </footer>
     </main>
   );

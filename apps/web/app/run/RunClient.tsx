@@ -135,7 +135,7 @@ export function RunClient() {
 
       {steps.length > 0 && (
         <>
-        <p className="mt-6 text-xs text-muted">
+        <p className="card mt-6 px-4 py-3 text-xs text-muted">
           Each &quot;view tx&quot; link opens Arc Testnet&apos;s block explorer. That explorer sometimes lags or fails
           to index a transaction even though it&apos;s already confirmed on-chain. If a link shows an error, the
           transaction still happened; you can confirm it yourself by checking the live{" "}
